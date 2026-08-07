@@ -1,11 +1,11 @@
 # What's left, in one line each
 
-Status as of Step 4 (question selector) complete, awaiting your review before push.
+Status as of Step 5 (state machine) complete, awaiting your review before push.
 
 | Step | What it builds | Needs any API key / external service? |
 |---|---|---|
-| 5 — `engine.py` (**the heart**) | The state machine that turns "caller pressed 3" into "here's what to say and listen for next," including undo (`#`), restart (`0`), repeat (`*`) | No — pure Python, works entirely offline |
-| 6 — `menu.py` | Lets a caller who already knows a scheme's number dial it directly, or browse by category instead of answering narrowing questions | No |
+| 5 — `engine.py` (**the heart**) — done | The state machine that turns "caller pressed 3" into "here's what to say and listen for next," including undo (`#`), restart (`0`), repeat (`*`), and the fallback ladders for silence/wrong-buttons/unclear-speech | No — pure Python, works entirely offline |
+| 6 — `menu.py` — next | Lets a caller who already knows a scheme's number dial it directly, or browse by category instead of answering narrowing questions | No |
 | 7 — `api.py` | Wraps the engine in plain HTTP endpoints (start a call, send an event, check state) so anything can drive a call the same way | No — just a web server on your own machine |
 | 8 — `sim.py` (**the demo**) | A terminal program you can type keypresses into and watch a full fake call happen start to finish, using everything built so far | No |
 | 9 — content pass | *Not code* — hand-writing the real eligibility rules for all 100 real schemes (right now only the 20 fake demo schemes have rules) | No, this is manual writing work, done in parallel by whoever's editing the scheme data |

@@ -2,7 +2,7 @@
 
 This is the map to come back to whenever something breaks and it's not
 obvious which file is responsible. It reflects the code as it actually
-exists right now (Steps 0-4 done), not the original build plan.
+exists right now (Steps 0-5 done), not the original build plan.
 
 For a click-through demo of Steps 3+4 actually running, see the
 "Haqdaar Voice — Call Walkthrough" artifact from this conversation.
@@ -42,10 +42,10 @@ flowchart TB
         NARROW -->|worst-case simulation| SELECT
     end
 
-    subgraph heart["engine.py — Step 5, NOT BUILT YET"]
+    subgraph heart["engine.py — Step 5, DONE"]
         ENGINE["step(state, event)<br/>→ (new_state, actions)<br/>THE HEART — pure state machine"]
-        SELECT -.->|will call| ENGINE
-        NARROW -.->|will call, on every answer + on # undo| ENGINE
+        SELECT -->|calls| ENGINE
+        NARROW -->|calls, on every answer + on # undo| ENGINE
     end
 
     subgraph menu_layer["menu.py — Step 6, NOT BUILT YET"]
@@ -74,7 +74,7 @@ flowchart TB
     end
 
     style core fill:#e7ecde,stroke:#5c7048
-    style heart fill:#fdf3ea,stroke:#a8461f
+    style heart fill:#e7ecde,stroke:#5c7048
     style menu_layer fill:#f3efe4,stroke:#c9bd9f
     style surface fill:#f3efe4,stroke:#c9bd9f
     style clients fill:#f3efe4,stroke:#c9bd9f
@@ -93,8 +93,8 @@ flowchart TB
 | `src/haqdaar/bank.py` | done | Loads and validates `question_bank.yaml`. Answers one question: "given what's been answered so far, which questions are still askable?" |
 | `src/haqdaar/narrow.py` | done | **The most safety-critical file in the project.** Given a dict of answers, returns every scheme that hasn't been *disproven* — an unanswered attribute never removes a scheme. Getting this backwards would silently hide schemes from callers who haven't been asked enough questions yet. |
 | `src/haqdaar/select.py` | done | Given the askable questions and the current candidates, picks the single question that will narrow the list the most no matter which button the caller presses. Can optionally ask an LLM to break ties among the top 5 — but the LLM only ever sees question IDs and a one-line reason, never scheme names, and any bad/slow/missing response falls back to the deterministic top pick automatically. |
-| `src/haqdaar/engine.py` | **Step 5 — next** | Will own the actual call state (what's been asked, what's been answered, how many candidates remain) and decide what happens on every keypress, including the global controls (`0`=restart, `*`=repeat, `#`=undo one answer). This is the file everything else routes through. |
-| `src/haqdaar/menu.py` | Step 6 | Will handle the "I already know the scheme's number" path — direct dial by scheme number, and the browse-by-category menu tree. |
+| `src/haqdaar/engine.py` | done | Owns the actual call state (what's been asked, what's been answered, how many candidates remain) and decides what happens on every keypress, including the global controls (`0`=restart, `*`=repeat, `#`=undo one answer, always re-running the narrowing so the candidate count is never stale) and the fallback ladders for silence, wrong buttons, and unclear speech. This is the file everything else routes through. |
+| `src/haqdaar/menu.py` | **Step 6 — next** | Will handle the "I already know the scheme's number" path — direct dial by scheme number, and the browse-by-category menu tree. |
 | `src/haqdaar/api.py` | Step 7 | Will expose `engine.py` over plain HTTP endpoints, so any client (a terminal, a real phone system) can drive a call the same way. |
 | `src/haqdaar/sim.py` | Step 8 | A terminal program that plays the role of a phone: prints what the system would say, accepts keypresses, and shows the call happening — the same demo the artifact above shows, but for the finished, full system. |
 | `src/haqdaar/voice.py` | Later, not scoped yet | Will eventually turn the system's text prompts into speech and callers' speech into text, via Sarvam. |
