@@ -62,6 +62,19 @@ def synth_schemes():
             if state
             else ""
         )
+        # Every 5th scheme is unverified and carries an unconfirmed deadline
+        # sentence in `application`, matching PRD M12 ("deadlines spoken
+        # only from verified=1 rows") - menu.py's section_text() must strip
+        # exactly this sentence, and only for these schemes, per H9. The
+        # real 100-scheme catalogue has no deadline text yet (Step 9 content
+        # pass hasn't run), so this is the only place that behaviour is
+        # exercisable until then.
+        is_unverified = i % 5 == 0
+        deadline_sentence = (
+            " Applications must be submitted before the last date of 31 March."
+            if is_unverified
+            else ""
+        )
         out.append(
             {
                 "slug": f"demo-{i:03d}",
@@ -70,11 +83,12 @@ def synth_schemes():
                 "benefits": f"Rs {10000 * i} one-time assistance for eligible {persona} applicants.",
                 "eligibility": f"Applicant should be a {persona} aged 18 to 60 with household "
                 f"income under Rs 5 lakh.",
-                "application": "Apply at the nearest block office with the listed documents.",
+                "application": f"Apply at the nearest block office with the listed documents.{deadline_sentence}",
                 "documents": "Aadhaar card, income certificate, bank passbook.",
                 "level": "State" if state else "Central",
                 "schemeCategory": [theme.title()],
                 "tags": [persona, theme, "demo"],
+                "verified": 0 if is_unverified else 1,
             }
         )
     return out
@@ -160,11 +174,12 @@ def main():
               (slug,scheme_no,scheme_name,details,benefits,eligibility,application,
                documents,level,state_scope,district_scope,theme,need_group,
                applicant_type,name_short_hi,benefit_one_line,needs_human_name,verified)
-              VALUES (?,?,?,?,?,?,?,?,?,?,NULL,?,?,?,?,NULL,?,1)""",
+              VALUES (?,?,?,?,?,?,?,?,?,?,NULL,?,?,?,?,NULL,?,?)""",
             (
                 s["slug"], i, s["scheme_name"], s.get("details"), s.get("benefits"),
                 s.get("eligibility"), s.get("application"), s.get("documents"),
                 s.get("level"), st, th, ng, at, sn, 1 if flag else 0,
+                s.get("verified", 1),
             ),
         )
         for c in s.get("schemeCategory") or []:

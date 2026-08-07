@@ -18,3 +18,16 @@ what the actual code returns.
   over the `const TRACE = ...` line in the HTML file.
 - **`step5_trace.json`** — the generated data itself, kept alongside the
   script for diffing when the trace changes between commits.
+- **`step6_menu_demo.html`** — open directly in a browser. Two tabs: "Browse
+  the menu" (walk the number tree: theme → need group where applicable →
+  scheme list → section text, with breadcrumb navigation) and "Dial a code"
+  (type a 3-digit code or click a sample chip to jump straight to one
+  section — try `054`, an unverified scheme, vs `011`, a verified one, to
+  see the deadline-sentence stripping live). Driven entirely by
+  `haqdaar.menu` functions.
+- **`gen_step6_trace.py`** — regenerates `step6_menu_trace.json`. Run
+  `.venv/bin/python demos/gen_step6_trace.py` after any change to
+  `menu.py` or the seed data, then paste the new JSON over the `const
+  DATA = ...` line in `step6_menu_demo.html`.
+- **`step6_menu_trace.json`** — the generated data itself, kept alongside
+  the script for diffing.
