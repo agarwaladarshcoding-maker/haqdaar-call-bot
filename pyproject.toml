@@ -1,0 +1,20 @@
+[project]
+name = "haqdaar"
+version = "0.1.0"
+description = "Haqdaar Voice - IVR scheme matcher"
+requires-python = ">=3.10"
+dependencies = [
+  "pyyaml",
+  "fastapi",
+  "uvicorn",
+  "httpx",
+  "pytest",
+  "python-dotenv",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

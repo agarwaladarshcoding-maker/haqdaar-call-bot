@@ -1,0 +1,902 @@
+# Haqdaar Voice — Question Bank v3  (grounded in the real 100-scheme catalogue)
+# ---------------------------------------------------------------------------
+# This file is DATA, not code. The engine reads it; the LLM never edits it.
+#
+# v3 = v2's persona/session/known-scheme layers (kept, they are catalogue-
+# agnostic and good) + a full rewrite of the purpose/occupation/attribute
+# layers against optimized_schemes.json via scripts/ingest.py. v1 and v2 were
+# both built around a farmer-first, crop-insurance-heavy assumption that
+# CHANGE_REPORT.md already disproved once (v4->v5): this catalogue is 52%
+# business/MSME, 13% craft, 10% training, 10% welfare, 9% fisheries, 6%
+# farming, and has ZERO crop-insurance schemes. Every attribute below was
+# checked against real eligibility/benefits text before being kept - see the
+# frequency counts in the Step-2 build notes. Dead attributes from v1/v2
+# (has_kcc, livestock, irrigation_source, fpo_member, has_soil_health_card,
+# crop_category/season/is_organic/damage_cause, pmkisan_registered) are
+# removed: each matched 0-2 schemes in the real data and would burn a
+# question turn on the 10-question budget for nothing.
+#
+# State is now a LATE tiebreaker (gain 3, single-step), not an early two-step
+# gate. Reason: 62/100 schemes are Puducherry, 16/100 West Bengal - state is
+# close to a constant on this catalogue, not a discriminator (CHANGE_REPORT
+# #3). It still never eliminates a scheme whose state_scope is NULL.
+#
+# Contract:
+#   - Every question writes exactly ONE attribute from attribute_seed.sql.
+#   - `requires` is a boolean expression over answered attributes. If it does
+#     not evaluate TRUE, the question is NOT askable. This is the DAG edge.
+#   - `gain` is a static prior (1-10) used only to break ties before any
+#     answers exist. After turn 1 the engine computes real information gain
+#     from the live candidate set and `gain` is ignored.
+#   - DTMF answers use keys 1-9 ONLY. 0, * and # are globally reserved.
+#   - `speech: true` at every node (PRD §3.1, audio-overrides-buttons).
+# ---------------------------------------------------------------------------
+
+meta:
+  version: 3
+  question_count: 47   # validator-enforced
+  language_default: hi
+  max_questions_per_call: 10        # hard cap
+  target_questions_per_call: 6      # design target
+  stop_when_candidates_lte: 5
+
+# Global keys. Available at EVERY node, never redefined per question.
+# LOCKED by the team, 8 Aug 2026. Changing these means re-recording audio,
+# updating the validator and updating GUIDE.md. Treat as frozen.
+#   0  main menu   -> jump back to language selection, wipe answers
+#   *  repeat      -> replay whatever was just said (question OR answer)
+#   #  back        -> undo the last answer, re-ask the previous question
+controls:
+  "0": {action: main_menu, hi: "mukhya menu ke liye zero", en: "press zero for the main menu"}
+  "*": {action: repeat,    hi: "dobara sunne ke liye star", en: "press star to hear it again"}
+  "#": {action: back,      hi: "pichhle sawaal ke liye hash", en: "press hash for the previous question"}
+
+# Silence ladder. Total budget 30 seconds, then end politely.
+silence_ladder:
+  - {at: 5,  action: nudge_short,  hi: "Suniye, koi button dabaiye."}
+  - {at: 15, action: two_options,  hi: "Do vikalp hain. Pehle ke liye 1, doosre ke liye 2."}
+  - {at: 25, action: are_you_there, hi: "Kya aap line par hain?"}
+  - {at: 30, action: end_politely, hi: "Dhanyavaad. Phir call kijiye."}
+
+# Speech policy. Speech is a convenience, buttons are the contract.
+# Two failed speech attempts at ANY node and that node drops to buttons only
+# for the rest of the call. We never ask a third time.
+speech_policy:
+  max_speech_attempts: 2
+  on_unclear:
+    hi: "Mujhe samajh nahi aaya. Dobara boliye."
+    en: "I did not understand. Please say that again."
+  after_max:
+    action: force_dtmf
+    hi: "Koi baat nahi. Button se kariye."
+    en: "No problem. Please use the buttons."
+  min_confidence: 0.6      # below this, treat as unclear. Never guess.
+
+# Wrong / unmapped button. Distinct from silence and from unclear speech.
+invalid_policy:
+  max_invalid: 3
+  on_invalid:
+    hi: "Yeh button sahi nahi hai."
+    en: "That is not a valid option."
+  then: replay_options      # re-read only the options, not the whole question
+  on_max_invalid:
+    action: force_first_option_menu
+    hi: "Chaliye, aasaan karte hain. Sirf do vikalp suniye."
+
+defaults:
+  collect: {digits: 1, speech: true}
+  timeouts: silence_ladder
+  barge_in: true
+
+questions:
+
+# ===========================================================================
+# LAYER 0 — SESSION (3). Always asked, in this order, before anything else.
+# ===========================================================================
+- id: Q001_LANGUAGE
+  layer: session
+  writes: language
+  requires: always
+  gain: 10
+  why: "Sets TTS voice and prompt set for the whole call. Nothing can be said correctly before this."
+  tags: [session, mandatory, first]
+  say_key: q001_language
+  # BUTTONS ONLY. No speech, no barge-in. We cannot run speech recognition
+  # before we know which language to run it in - it is a chicken-and-egg.
+  collect: {digits: 1, speech: false}
+  speech_disabled_reason: "Language not yet known; ASR model cannot be selected."
+  barge_in: false
+  prompt_hi: "Namaste. Hindi ke liye 1 dabaiye. For English, press 2. Hindi aur English dono ke liye 3 dabaiye."
+  prompt_en: "Namaste. Hindi ke liye 1 dabaiye. For English, press 2. Hindi aur English dono ke liye 3 dabaiye."
+  dtmf:
+    "1": {set: {language: hi}, hi: "Hindi", en: "Hindi"}
+    "2": {set: {language: en}, hi: "English", en: "English"}
+    "3": {set: {language: hinglish}, hi: "Hindi aur English", en: "Hindi and English"}
+  on_invalid:
+    action: replay_options
+    hi: "Sirf 1, 2 ya 3 dabaiye."
+  on_max_invalid:
+    action: default
+    set: {language: hi}
+    hi: "Hum Hindi mein aage badhte hain."
+  on_timeout:
+    action: default
+    set: {language: hi}
+    hi: "Hum Hindi mein aage badhte hain."
+
+- id: Q002_INTENT
+  layer: session
+  writes: intent
+  requires: "language is answered"
+  gain: 10
+  why: "Splits the call into three completely different subgraphs. Highest-value branch in the system."
+  tags: [session, mandatory, router]
+  say_key: q002_intent
+  prompt_hi: "Kisi yojna ka naam pata hai to 1. Apne liye yojna dhoondhni hai to 2. Kisi kaam ke liye madad chahiye to 3."
+  prompt_en: "Press 1 if you know the scheme name. 2 to find schemes for you. 3 for help with a specific need."
+  dtmf:
+    "1": {set: {intent: known_scheme}, hi: "Naam pata hai", en: "I know the name"}
+    "2": {set: {intent: find_for_me}, hi: "Meri yojna dhoondho", en: "Find schemes for me"}
+    "3": {set: {intent: by_purpose}, hi: "Kaam ke hisaab se", en: "By purpose"}
+  speech_intents: [KNOWN_SCHEME, FIND_FOR_ME, BY_PURPOSE, UNKNOWN]
+
+- id: Q003_ON_BEHALF
+  layer: session
+  writes: on_behalf
+  requires: "intent in ['find_for_me','by_purpose']"
+  gain: 3
+  why: "PRD §3.2 C3. Answers are about the beneficiary, not the handset holder. Cheap to ask, prevents a whole class of wrong results."
+  tags: [session, cheap]
+  say_key: q003_on_behalf
+  prompt_hi: "Yeh jaankari apne liye hai to 1, kisi aur ke liye to 2."
+  prompt_en: "Press 1 if this is for you, 2 if for someone else."
+  dtmf:
+    "1": {set: {on_behalf: self}, hi: "Apne liye", en: "For me"}
+    "2": {set: {on_behalf: other}, hi: "Kisi aur ke liye", en: "For someone else"}
+
+# ===========================================================================
+# LAYER 1 — PERSONA (5). Broad identity routing, orthogonal to scheme theme.
+# Kept from v2 - genuinely useful and does not conflict with the real
+# catalogue. Reduced from v2's 9 (dropped GST/turnover/vending-cert
+# sub-branches - see LAYER 3, they are replaced by catalogue-grounded
+# business attributes with better hit rates).
+# ===========================================================================
+- id: Q003B_PERSONA
+  layer: persona
+  writes: persona
+  requires: "intent in ['find_for_me','by_purpose']"
+  gain: 8
+  why: "Determines the broad identity of the caller. Cheap and trivially answerable, sets tone for later prompts."
+  tags: [persona, high_gain, router]
+  say_key: q003b_persona
+  prompt_hi: "Aap kya karte hain? Vyapar ya dukaan 1. Bunkar ya karigar 2. Machhli palan 3. Kisan 4. Naukri ya kuch aur 5."
+  prompt_en: "What is your work? Business or shop 1. Weaver or artisan 2. Fishing 3. Farmer 4. Salaried or other 5."
+  dtmf:
+    "1": {set: {persona: business}, hi: "Vyapar", en: "Business"}
+    "2": {set: {persona: artisan}, hi: "Bunkar", en: "Artisan"}
+    "3": {set: {persona: fisher}, hi: "Machhli palan", en: "Fisher"}
+    "4": {set: {persona: farmer}, hi: "Kisan", en: "Farmer"}
+    "5": {set: {persona: other}, hi: "Anya", en: "Other"}
+  speech_intents: [PR_BUSINESS, PR_ARTISAN, PR_FISHER, PR_FARMER, PR_OTHER, UNKNOWN]
+
+- id: Q003C_APPLICANT_TYPE
+  layer: persona
+  writes: applicant_type
+  requires: "persona is answered"
+  gain: 10
+  why: "CHANGE_REPORT #5: highest-information question available. Splits the catalogue business 31 / person 26 / both 43, and every caller knows the answer instantly."
+  tags: [persona, high_gain, router]
+  say_key: q003c_applicant_type
+  prompt_hi: "Yeh jaankari ek dukaan ya udyog ke liye chahiye 1, ek vyakti ke liye 2, ya dono ho sakta hai 3?"
+  prompt_en: "Is this for a business or shop 1, an individual 2, or could be either 3?"
+  dtmf:
+    "1": {set: {applicant_type: business}, hi: "Udyog", en: "Business"}
+    "2": {set: {applicant_type: person}, hi: "Vyakti", en: "Individual"}
+    "3": {set: {applicant_type: both}, hi: "Dono ho sakta hai", en: "Either"}
+
+- id: Q003D_STUDENT
+  layer: persona
+  writes: is_student
+  requires: "persona == 'other'"
+  gain: 5
+  why: "Scholarship and coaching schemes (LAYER 6 welfare) are a real slice of the welfare theme; catches students who don't fit the other four personas."
+  tags: [persona, education]
+  say_key: q003d_student
+  prompt_hi: "Kya aap student hain? Haan 1, nahi 2."
+  prompt_en: "Are you a student? Yes 1, No 2."
+  dtmf:
+    "1": {set: {is_student: "yes"}, hi: "Haan", en: "Yes"}
+    "2": {set: {is_student: "no"}, hi: "Nahi", en: "No"}
+
+# ===========================================================================
+# LAYER 2 — THEME (1). The single strongest narrowing question.
+# Replaces v1/v2's `purpose` menu (income_support/crop_insurance/pension/...)
+# with the ACTUAL 6-theme menu from scripts/ingest.py, which is what the
+# menu navigator (Step 6) will present and what scheme_no dial codes are
+# built from. Options match ingest.py THEMES exactly, in real-volume order.
+# ===========================================================================
+- id: Q004_THEME
+  layer: purpose
+  writes: theme
+  requires: "applicant_type is answered and intent == 'by_purpose'"
+  gain: 10
+  why: "Cuts the 100-scheme catalogue by real theme volume (business 52, craft 13, fisheries 9, training 10, farming 6, welfare 10). Matches the menu navigator exactly, so a caller who narrows here lands on the same option they would have dialled directly."
+  tags: [purpose, high_gain, router]
+  say_key: q004_theme
+  prompt_hi: "Vyapar, udyog ya dukaan 1. Bunkar, coir ya dastkari 2. Machhli palan ya nauka 3. Prashikshan ya rozgar 4. Kheti ya baagwani 5. Pension, madad ya padhai 6."
+  prompt_en: "Business, industry or shop 1. Handloom, coir or handicraft 2. Fisheries or boats 3. Training or employment 4. Farming or horticulture 5. Pension, relief or study 6."
+  dtmf:
+    "1": {set: {theme: business}, hi: "Vyapar", en: "Business"}
+    "2": {set: {theme: craft}, hi: "Bunkar", en: "Craft"}
+    "3": {set: {theme: fisheries}, hi: "Machhli palan", en: "Fisheries"}
+    "4": {set: {theme: training}, hi: "Prashikshan", en: "Training"}
+    "5": {set: {theme: farming}, hi: "Kheti", en: "Farming"}
+    "6": {set: {theme: welfare}, hi: "Pension madad", en: "Welfare"}
+  speech_intents: [TH_BUSINESS, TH_CRAFT, TH_FISHERIES, TH_TRAINING, TH_FARMING, TH_WELFARE, UNKNOWN]
+
+# ===========================================================================
+# LAYER 3 — BUSINESS ATTRIBUTES (7). Replaces v2's GST/turnover sub-branch.
+# Grounded in real eligibility-text frequency (Step 2 build notes):
+# investment/plant-machinery ceilings hit 18/100, employment_created 18/100,
+# enterprise_type (mfg vs service) 14/100, new-vs-existing unit 14/100,
+# category-reserved (SC/ST/women) business rows 7/100. GST and turnover
+# (v2's questions) each hit ~1/100 and are dropped.
+# ===========================================================================
+- id: Q020_ENTERPRISE_TYPE
+  layer: business
+  writes: enterprise_type
+  requires: "theme == 'business' or applicant_type == 'business'"
+  gain: 8
+  why: "Manufacturing vs service-sector MSME rows use different subsidy schedules in this catalogue; 14/100 schemes gate on this directly."
+  tags: [business, high_gain]
+  say_key: q020_enterprise_type
+  prompt_hi: "Udyog kis tarah ka hai? Manufacturing ya utpadan 1. Service ya sewa 2. Dono 3."
+  prompt_en: "What kind of enterprise? Manufacturing 1. Service 2. Both 3."
+  dtmf:
+    "1": {set: {enterprise_type: manufacturing}, hi: "Utpadan", en: "Manufacturing"}
+    "2": {set: {enterprise_type: service}, hi: "Sewa", en: "Service"}
+    "3": {set: {enterprise_type: both}, hi: "Dono", en: "Both"}
+
+- id: Q021_UNIT_STAGE
+  layer: business
+  writes: unit_stage
+  requires: "theme == 'business' or applicant_type == 'business'"
+  gain: 7
+  why: "New-unit capital subsidies and existing-unit expansion/interest schemes are mutually exclusive in this catalogue; 14/100 rows name one or the other explicitly."
+  tags: [business, high_gain]
+  say_key: q021_unit_stage
+  prompt_hi: "Naya udyog shuru karna hai 1, ya pehle se chal raha hai 2?"
+  prompt_en: "Starting a new unit 1, or is it already running 2?"
+  dtmf:
+    "1": {set: {unit_stage: new}, hi: "Naya", en: "New"}
+    "2": {set: {unit_stage: existing}, hi: "Chal raha hai", en: "Existing"}
+
+- id: Q022_INVESTMENT_SIZE
+  layer: business
+  writes: investment_size
+  requires: "theme == 'business' or applicant_type == 'business'"
+  gain: 7
+  why: "Plant-and-machinery / fixed-capital investment ceilings decide MSME-vs-larger-unit eligibility on 18/100 rows - the single most common hard number in the business eligibility text."
+  tags: [business, banded, high_gain]
+  say_key: q022_investment
+  prompt_hi: "Machine ya udyog mein kitna paisa laga hai ya lagega? 25 lakh se kam 1. 25 lakh se 5 crore 2. 5 crore se zyada 3. Pata nahi 4."
+  prompt_en: "Investment in machinery or the unit? Under 25 lakh 1. 25 lakh to 5 crore 2. Over 5 crore 3. Not sure 4."
+  dtmf:
+    "1": {set: {investment_size: lt25l}, hi: "25L se kam", en: "Under 25L"}
+    "2": {set: {investment_size: "25l_5cr"}, hi: "25L-5Cr", en: "25L-5Cr"}
+    "3": {set: {investment_size: gt5cr}, hi: "5Cr se zyada", en: "Over 5Cr"}
+    "4": {set: {investment_size: unknown}, hi: "Pata nahi", en: "Not sure"}
+
+- id: Q023_EMPLOYMENT_CREATED
+  layer: business
+  writes: employment_created
+  requires: "unit_stage is answered"
+  gain: 6
+  why: "18/100 business schemes condition benefit or eligibility on jobs the unit creates or employs - a recurring clause, not a rare one."
+  tags: [business, banded]
+  say_key: q023_employment
+  prompt_hi: "Kitne logon ko naukri di hai ya denge? Koi nahi 1. Ek se paanch 2. Paanch se zyada 3."
+  prompt_en: "How many people employed or will be employed? None 1. One to five 2. More than five 3."
+  dtmf:
+    "1": {set: {employment_created: none}, hi: "Koi nahi", en: "None"}
+    "2": {set: {employment_created: "1_5"}, hi: "1-5", en: "1-5"}
+    "3": {set: {employment_created: gt5}, hi: "5 se zyada", en: "Over 5"}
+
+- id: Q024_IS_REGISTERED_FIRM
+  layer: business
+  writes: is_registered_firm
+  requires: "theme == 'business' or applicant_type == 'business'"
+  gain: 5
+  why: "Distinguishes a proprietorship/individual applicant from a registered firm, society or company - several schemes require one or the other explicitly."
+  tags: [business, documents]
+  say_key: q024_registered_firm
+  prompt_hi: "Udyog register hai jaise company, firm ya society? Haan 1, nahi 2."
+  prompt_en: "Is the enterprise registered, e.g. as a company, firm or society? Yes 1, No 2."
+  dtmf:
+    "1": {set: {is_registered_firm: "yes"}, hi: "Haan", en: "Yes"}
+    "2": {set: {is_registered_firm: "no"}, hi: "Nahi", en: "No"}
+
+- id: Q025_UDYAM_REGISTERED
+  layer: business
+  writes: udyam_registered
+  requires: "is_registered_firm == 'yes'"
+  gain: 4
+  why: "MSME/Udyam registration is a precondition for several MSME-specific subsidy lines; late in the branch since it only applies to already-registered units."
+  tags: [business, documents]
+  say_key: q025_udyam
+  prompt_hi: "Udyam registration hua hai? Haan 1, nahi 2, pata nahi 3."
+  prompt_en: "Is it Udyam-registered? Yes 1, No 2, Don't know 3."
+  dtmf:
+    "1": {set: {udyam_registered: "yes"}, hi: "Haan", en: "Yes"}
+    "2": {set: {udyam_registered: "no"}, hi: "Nahi", en: "No"}
+    "3": {set: {udyam_registered: unknown}, hi: "Pata nahi", en: "Don't know"}
+
+- id: Q026_LOAN_TAKEN
+  layer: business
+  writes: loan_taken
+  requires: "theme == 'business' or applicant_type == 'business'"
+  gain: 5
+  why: "Interest-subsidy and waiver schemes require an existing loan; capital-subsidy schemes often exclude applicants who already borrowed for the same purpose. 20/100 rows reference loan status."
+  tags: [business, credit]
+  say_key: q026_loan_taken
+  prompt_hi: "Udyog ke liye bank se karza liya hai? Haan 1, nahi 2."
+  prompt_en: "Have you taken a bank loan for the business? Yes 1, No 2."
+  dtmf:
+    "1": {set: {loan_taken: "yes"}, hi: "Haan", en: "Yes"}
+    "2": {set: {loan_taken: "no"}, hi: "Nahi", en: "No"}
+
+# ===========================================================================
+# LAYER 4 — CRAFT / FISHERIES ATTRIBUTES (6). Both themes are dominated by
+# individual-craftsperson-or-society and boat/coop-membership eligibility
+# text (see Step 2 build notes). Generic land/crop/livestock questions from
+# v1/v2 do not apply here at all - dropped.
+# ===========================================================================
+- id: Q030_SOCIETY_OR_INDIVIDUAL
+  layer: craft_fisheries
+  writes: applies_as
+  requires: "theme in ['craft','fisheries']"
+  gain: 7
+  why: "A real split in both themes: several rows require a registered cooperative society or agency, others an individual craftsperson or boat owner. Wrong branch wastes the whole call."
+  tags: [craft, fisheries, high_gain, router]
+  say_key: q030_society_individual
+  prompt_hi: "Aap akele aavedan kar rahe hain 1, ya kisi samiti ya society ki taraf se 2?"
+  prompt_en: "Applying as an individual 1, or on behalf of a society or cooperative 2?"
+  dtmf:
+    "1": {set: {applies_as: individual}, hi: "Akele", en: "Individual"}
+    "2": {set: {applies_as: society}, hi: "Samiti", en: "Society"}
+
+- id: Q031_COOP_MEMBER
+  layer: craft_fisheries
+  writes: coop_member
+  requires: "theme in ['craft','fisheries'] and applies_as == 'individual'"
+  gain: 6
+  why: "9/100 rows (mostly fisheries) require cooperative-society membership as a soft eligibility signal even for individual applicants."
+  tags: [craft, fisheries]
+  say_key: q031_coop_member
+  prompt_hi: "Kisi sahakari samiti ke sadasya hain? Haan 1, nahi 2."
+  prompt_en: "Are you a member of a cooperative society? Yes 1, No 2."
+  dtmf:
+    "1": {set: {coop_member: "yes"}, hi: "Haan", en: "Yes"}
+    "2": {set: {coop_member: "no"}, hi: "Nahi", en: "No"}
+
+- id: Q032_BOAT_OWNER
+  layer: craft_fisheries
+  writes: boat_owner
+  requires: "theme == 'fisheries'"
+  gain: 7
+  why: "Boat/vessel ownership or registration gates the boat-conversion, insurance-premium and reactivation schemes - roughly half the fisheries theme."
+  tags: [fisheries, high_gain]
+  say_key: q032_boat_owner
+  prompt_hi: "Aapke paas machhli pakadne ki naav hai? Haan 1, nahi 2."
+  prompt_en: "Do you own a fishing boat? Yes 1, No 2."
+  dtmf:
+    "1": {set: {boat_owner: "yes"}, hi: "Haan", en: "Yes"}
+    "2": {set: {boat_owner: "no"}, hi: "Nahi", en: "No"}
+
+- id: Q033_CRAFT_TYPE
+  layer: craft_fisheries
+  writes: craft_type
+  requires: "theme == 'craft'"
+  gain: 5
+  why: "Coir, handloom and general handicraft schemes are separately administered bodies in this catalogue; the caller's craft decides which body applies."
+  tags: [craft]
+  say_key: q033_craft_type
+  prompt_hi: "Kaunsa kaam karte hain? Bunai ya handloom 1. Coir 2. Anya dastkari 3."
+  prompt_en: "What kind of craft? Weaving or handloom 1. Coir 2. Other handicraft 3."
+  dtmf:
+    "1": {set: {craft_type: handloom}, hi: "Bunai", en: "Handloom"}
+    "2": {set: {craft_type: coir}, hi: "Coir", en: "Coir"}
+    "3": {set: {craft_type: other}, hi: "Anya", en: "Other"}
+
+- id: Q034_LITERATE
+  layer: craft_fisheries
+  writes: is_literate
+  requires: "theme == 'craft' and applies_as == 'individual'"
+  gain: 3
+  why: "At least one craft scheme states literacy as an explicit condition; cheap to ask, avoids a late rejection."
+  tags: [craft, low_gain]
+  say_key: q034_literate
+  prompt_hi: "Kya aap padhna likhna jaante hain? Haan 1, nahi 2."
+  prompt_en: "Can you read and write? Yes 1, No 2."
+  dtmf:
+    "1": {set: {is_literate: "yes"}, hi: "Haan", en: "Yes"}
+    "2": {set: {is_literate: "no"}, hi: "Nahi", en: "No"}
+
+- id: Q035_YEARS_IN_TRADE
+  layer: craft_fisheries
+  writes: years_in_trade_band
+  requires: "theme in ['craft','fisheries'] and applies_as == 'individual'"
+  gain: 4
+  why: "Several exhibition, award and reactivation schemes require a minimum number of years in the trade (e.g. 3-year exhibition participation clause)."
+  tags: [craft, fisheries]
+  say_key: q035_years_trade
+  prompt_hi: "Kitne saal se yeh kaam kar rahe hain? Teen saal se kam 1. Teen saal ya zyada 2."
+  prompt_en: "How long in this trade? Under 3 years 1. 3 years or more 2."
+  dtmf:
+    "1": {set: {years_in_trade_band: lt3y}, hi: "3 saal se kam", en: "Under 3y"}
+    "2": {set: {years_in_trade_band: gte3y}, hi: "3 saal ya zyada", en: "3y+"}
+
+# ===========================================================================
+# LAYER 5 — TRAINING (3). Real training-theme rows are craft/industry-linked
+# skill programmes (coir, silk, industrial trades) plus a couple of pure
+# scholarship/coaching schemes, not generic youth skilling. Kept short.
+# ===========================================================================
+- id: Q040_TRAINING_LINKED_TRADE
+  layer: training
+  writes: training_related
+  requires: "theme == 'training'"
+  gain: 6
+  why: "Most training-theme rows are tied to a specific trade (coir, silk, industrial). Knowing whether the caller already has a trade in mind decides whether we can show a direct match or need the general list."
+  tags: [training, high_gain]
+  say_key: q040_training_trade
+  prompt_hi: "Kisi khaas kaam ke liye training chahiye jaise silk ya coir? Haan 1, nahi 2."
+  prompt_en: "Looking for training in a specific trade, like silk or coir? Yes 1, No 2."
+  dtmf:
+    "1": {set: {training_related: "yes"}, hi: "Haan", en: "Yes"}
+    "2": {set: {training_related: "no"}, hi: "Nahi", en: "No"}
+
+- id: Q041_ALREADY_WORKING
+  layer: training
+  writes: currently_employed
+  requires: "theme == 'training'"
+  gain: 4
+  why: "In-plant and advanced/high-skill training components require the applicant already work in the relevant industry; distinguishes them from entry-level schemes."
+  tags: [training]
+  say_key: q041_currently_employed
+  prompt_hi: "Kya aap abhi kisi udyog mein kaam karte hain? Haan 1, nahi 2."
+  prompt_en: "Are you currently working in an industry? Yes 1, No 2."
+  dtmf:
+    "1": {set: {currently_employed: "yes"}, hi: "Haan", en: "Yes"}
+    "2": {set: {currently_employed: "no"}, hi: "Nahi", en: "No"}
+
+# ===========================================================================
+# LAYER 6 — FARMING (2). Only 6 schemes, each crop-specific (paddy, coconut,
+# sugarcane, fodder, protected cultivation). Generic land/season/organic
+# questions from v1/v2 do not discriminate here at all - dropped.
+# ===========================================================================
+- id: Q050_CROP_GROWN
+  layer: farming
+  writes: crop_grown
+  requires: "theme == 'farming'"
+  gain: 7
+  why: "Every farming-theme scheme in this catalogue is crop-specific (paddy, coconut, sugarcane, fodder, protected cultivation). This one answer resolves almost the entire theme."
+  tags: [farming, high_gain]
+  say_key: q050_crop_grown
+  prompt_hi: "Mukhya fasal kya hai? Dhaan 1. Nariyal 2. Ganna 3. Chara ghas 4. Sanrakshit kheti ya baagwani 5. Anya 6."
+  prompt_en: "Main crop? Paddy 1. Coconut 2. Sugarcane 3. Fodder 4. Protected cultivation or horticulture 5. Other 6."
+  dtmf:
+    "1": {set: {crop_grown: paddy}, hi: "Dhaan", en: "Paddy"}
+    "2": {set: {crop_grown: coconut}, hi: "Nariyal", en: "Coconut"}
+    "3": {set: {crop_grown: sugarcane}, hi: "Ganna", en: "Sugarcane"}
+    "4": {set: {crop_grown: fodder}, hi: "Chara", en: "Fodder"}
+    "5": {set: {crop_grown: horticulture}, hi: "Baagwani", en: "Horticulture"}
+    "6": {set: {crop_grown: other}, hi: "Anya", en: "Other"}
+
+- id: Q051_OWNS_LAND
+  layer: farming
+  writes: owns_land
+  requires: "theme == 'farming'"
+  gain: 5
+  why: "Land ownership remains a real precondition for cultivation subsidies even on a small, crop-specific theme."
+  tags: [farming]
+  say_key: q051_owns_land
+  prompt_hi: "Aapke naam par kheti ki zameen hai? Haan 1, nahi 2."
+  prompt_en: "Is there farmland in your name? Yes 1, No 2."
+  dtmf:
+    "1": {set: {owns_land: "yes"}, hi: "Haan", en: "Yes"}
+    "2": {set: {owns_land: "no"}, hi: "Nahi", en: "No"}
+
+# ===========================================================================
+# LAYER 7 — WELFARE / DEMOGRAPHIC (10). The welfare theme here is mostly
+# WORKER REGISTRATION and disability/relief schemes (JKBOCWWB-style boards,
+# burial/death ex-gratia, disability allowance, scholarships) rather than
+# classic old-age farmer pension. Kept close to v2 (already reasonably
+# grounded) with worker_registered added and pmkisan-style farmer-pension
+# framing removed.
+# ===========================================================================
+- id: Q060_SOCIAL_CATEGORY
+  layer: demographic
+  writes: social_category
+  requires: "applicant_type in ['person','both']"
+  gain: 7
+  why: "Category-reserved schemes are a real, cleanly separable slice (7/100 business rows alone name SC/ST/women explicitly, plus welfare-theme rows)."
+  tags: [demographic, high_gain]
+  say_key: q060_category
+  prompt_hi: "Aapki shreni? Samanya 1. OBC 2. SC 3. ST 4. Alpsankhyak 5."
+  prompt_en: "Your category? General 1. OBC 2. SC 3. ST 4. Minority 5."
+  dtmf:
+    "1": {set: {social_category: GEN}, hi: "Samanya", en: "General"}
+    "2": {set: {social_category: OBC}, hi: "OBC", en: "OBC"}
+    "3": {set: {social_category: SC}, hi: "SC", en: "SC"}
+    "4": {set: {social_category: ST}, hi: "ST", en: "ST"}
+    "5": {set: {social_category: MIN}, hi: "Alpsankhyak", en: "Minority"}
+
+- id: Q061_GENDER
+  layer: demographic
+  writes: gender
+  requires: "applicant_type in ['person','both']"
+  gain: 6
+  why: "Women-specific schemes (entrepreneur, SHG-linked) recur across business and welfare themes here."
+  tags: [demographic, cheap]
+  say_key: q061_gender
+  prompt_hi: "Purush 1. Mahila 2. Anya 3."
+  prompt_en: "Male 1. Female 2. Other 3."
+  dtmf:
+    "1": {set: {gender: M}, hi: "Purush", en: "Male"}
+    "2": {set: {gender: F}, hi: "Mahila", en: "Female"}
+    "3": {set: {gender: O}, hi: "Anya", en: "Other"}
+
+- id: Q062_AGE_BAND
+  layer: demographic
+  writes: age_band
+  requires: "applicant_type in ['person','both']"
+  gain: 7
+  why: "Age gates youth/skilling schemes at one end and welfare/pension-style schemes at the other, across every theme."
+  tags: [demographic, banded, high_gain]
+  say_key: q062_age
+  prompt_hi: "Umar? Athara se kam 1. Athara se chalees 2. Ikkatalis se unsath 3. Saath ya usse zyada 4."
+  prompt_en: "Age? Under 18 1. 18 to 40 2. 41 to 59 3. 60 or above 4."
+  dtmf:
+    "1": {set: {age_band: lt18}, hi: "18 se kam", en: "Under 18"}
+    "2": {set: {age_band: "18_40"}, hi: "18-40", en: "18-40"}
+    "3": {set: {age_band: "41_59"}, hi: "41-59", en: "41-59"}
+    "4": {set: {age_band: gte60}, hi: "60+", en: "60+"}
+
+- id: Q063_INCOME_BAND
+  layer: demographic
+  writes: income_band
+  requires: "applicant_type in ['person','both']"
+  gain: 7
+  why: "Income ceilings and BPL-style eligibility are common disqualifiers on welfare and reserved-category rows."
+  tags: [demographic, banded, disqualifier, high_gain]
+  say_key: q063_income
+  prompt_hi: "Saalana ghar ki aay? Ek lakh se kam 1. Ek se dhai lakh 2. Dhai se paanch lakh 3. Paanch lakh se zyada 4."
+  prompt_en: "Annual household income? Under 1 lakh 1. 1 to 2.5 lakh 2. 2.5 to 5 lakh 3. Over 5 lakh 4."
+  dtmf:
+    "1": {set: {income_band: lt1l}, hi: "1 lakh se kam", en: "Under 1L"}
+    "2": {set: {income_band: "1l_2_5l"}, hi: "1-2.5 lakh", en: "1-2.5L"}
+    "3": {set: {income_band: "2_5l_5l"}, hi: "2.5-5 lakh", en: "2.5-5L"}
+    "4": {set: {income_band: gt5l}, hi: "5 lakh se zyada", en: "Over 5L"}
+
+- id: Q064_DISABILITY
+  layer: demographic
+  writes: disability
+  requires: "applicant_type in ['person','both']"
+  gain: 6
+  why: "Disability allowance and disability-linked welfare schemes are a distinct, real cluster in the welfare theme (6/100 rows overall)."
+  tags: [demographic, welfare]
+  say_key: q064_disability
+  prompt_hi: "Kya aapko ya ghar mein kisi ko divyangta hai? Haan 1, nahi 2."
+  prompt_en: "Do you or anyone in the household have a disability? Yes 1, No 2."
+  dtmf:
+    "1": {set: {disability: "yes"}, hi: "Haan", en: "Yes"}
+    "2": {set: {disability: "no"}, hi: "Nahi", en: "No"}
+
+- id: Q065_IS_WIDOW
+  layer: demographic
+  writes: is_widow
+  requires: "gender == 'F' and age_band in ['41_59','gte60']"
+  gain: 5
+  why: "Widow-linked relief and pension-style benefits appear in the welfare theme and are one of the highest-value, most-missed benefits for this exact segment."
+  tags: [demographic, welfare, sensitive]
+  say_key: q065_widow
+  prompt_hi: "Kya aap vidhwa hain? Haan 1, nahi 2. Nahi batana chahein to star."
+  prompt_en: "Are you a widow? Yes 1, No 2. Press star to skip."
+  skippable: true
+  dtmf:
+    "1": {set: {is_widow: "yes"}, hi: "Haan", en: "Yes"}
+    "2": {set: {is_widow: "no"}, hi: "Nahi", en: "No"}
+
+- id: Q066_WORKER_REGISTERED
+  layer: demographic
+  writes: worker_registered
+  requires: "theme == 'welfare' or applicant_type in ['person','both']"
+  gain: 6
+  why: "Several welfare-theme rows are Building & Other Construction Workers Welfare Board style schemes that require registration as an unorganised or construction worker - a real, recurring gate (5/100 rows) that no other question reaches."
+  tags: [demographic, welfare, documents]
+  say_key: q066_worker_registered
+  prompt_hi: "Kya aap kisi shramik board mein register hain, jaise nirman shramik board? Haan 1, nahi 2, pata nahi 3."
+  prompt_en: "Are you registered with a labour welfare board, e.g. a construction workers' board? Yes 1, No 2, Don't know 3."
+  dtmf:
+    "1": {set: {worker_registered: "yes"}, hi: "Haan", en: "Yes"}
+    "2": {set: {worker_registered: "no"}, hi: "Nahi", en: "No"}
+    "3": {set: {worker_registered: unknown}, hi: "Pata nahi", en: "Don't know"}
+
+- id: Q067_SCHOLARSHIP_NEED
+  layer: demographic
+  writes: education_need
+  requires: "is_student == 'yes' or theme == 'welfare'"
+  gain: 5
+  why: "Scholarship and special-coaching schemes are a real, separable slice of the welfare theme (pre-matric scholarship, special coaching for specific communities)."
+  tags: [demographic, education]
+  say_key: q067_scholarship
+  prompt_hi: "Padhai ke liye chhatravritti ya coaching sahayata chahiye? Haan 1, nahi 2."
+  prompt_en: "Do you need a scholarship or coaching support for studies? Yes 1, No 2."
+  dtmf:
+    "1": {set: {education_need: "yes"}, hi: "Haan", en: "Yes"}
+    "2": {set: {education_need: "no"}, hi: "Nahi", en: "No"}
+
+- id: Q068_HOUSEHOLD_SIZE
+  layer: demographic
+  writes: household_size
+  requires: "income_band is answered"
+  gain: 3
+  why: "Per-household benefit caps and relief-scheme amounts sometimes scale with household size."
+  tags: [demographic, banded, low_gain]
+  say_key: q068_household
+  prompt_hi: "Ghar mein kitne log? Ek do 1. Teen se paanch 2. Paanch se zyada 3."
+  prompt_en: "How many in the household? One or two 1. Three to five 2. More than five 3."
+  dtmf:
+    "1": {set: {household_size: "1_2"}, hi: "1-2", en: "1-2"}
+    "2": {set: {household_size: "3_5"}, hi: "3-5", en: "3-5"}
+    "3": {set: {household_size: gt5}, hi: "5+", en: "5+"}
+
+- id: Q069_EXISTING_PENSION
+  layer: demographic
+  writes: existing_pension
+  requires: "age_band == 'gte60' or theme == 'welfare'"
+  gain: 4
+  why: "The fisherman worked example in scheme_catalogue.sql (ira-wrflsncs) shows this as a real soft-rule signal; prevents recommending a benefit the caller already has."
+  tags: [demographic, welfare, disqualifier]
+  say_key: q069_existing_pension
+  prompt_hi: "Abhi koi pension milti hai? Haan 1, nahi 2."
+  prompt_en: "Do you already receive a pension? Yes 1, No 2."
+  dtmf:
+    "1": {set: {existing_pension: "yes"}, hi: "Haan", en: "Yes"}
+    "2": {set: {existing_pension: "no"}, hi: "Nahi", en: "No"}
+
+# ===========================================================================
+# LAYER 8 — GEOGRAPHY (1). DEMOTED per CHANGE_REPORT #3: 62/100 schemes are
+# Puducherry, 16/100 West Bengal - state is close to a constant on this
+# catalogue, not a discriminator. Single-step (not v2's two-step zone+state),
+# asked LATE as a tiebreaker only. Never eliminates a scheme whose
+# state_scope is NULL.
+# ===========================================================================
+- id: Q070_STATE
+  layer: geography
+  writes: state
+  requires: "income_band is answered or theme is answered"
+  gain: 3
+  why: "State only matters as a late tiebreaker on this catalogue - see CHANGE_REPORT #3. Asked after the higher-gain questions so it never crowds out a real discriminator."
+  tags: [geography, tiebreaker, low_gain]
+  say_key: q070_state
+  prompt_hi: "Aap kis rajya mein hain? Puducherry 1. West Bengal 2. Madhya Pradesh 3. Andhra Pradesh 4. Anya 5."
+  prompt_en: "Which state are you in? Puducherry 1. West Bengal 2. Madhya Pradesh 3. Andhra Pradesh 4. Other 5."
+  dtmf:
+    "1": {set: {state: PY}, hi: "Puducherry", en: "Puducherry"}
+    "2": {set: {state: WB}, hi: "West Bengal", en: "West Bengal"}
+    "3": {set: {state: MP}, hi: "Madhya Pradesh", en: "Madhya Pradesh"}
+    "4": {set: {state: AP}, hi: "Andhra Pradesh", en: "Andhra Pradesh"}
+    "5": {set: {state: other}, hi: "Anya", en: "Other"}
+  speech_intents: [STATE_NAME, UNKNOWN]
+
+# ===========================================================================
+# LAYER 9 — FINANCE (4). DBT/document readiness, catalogue-agnostic. Kept
+# from v2, trimmed to the 4 questions with real cross-theme relevance.
+# Dropped has_kcc (0 hits), loan_need_band/loan_purpose (superseded by
+# LAYER 3's business loan_taken, which is grounded in real data).
+# ===========================================================================
+- id: Q080_BANK_ACCOUNT
+  layer: finance
+  writes: has_bank_account
+  requires: "intent in ['find_for_me','by_purpose']"
+  gain: 6
+  why: "Every DBT-style benefit in this catalogue requires a bank account. A no here changes the advice from apply to open-an-account-first."
+  tags: [finance, gate, documents]
+  say_key: q080_bank
+  prompt_hi: "Bank khata hai? Haan 1, nahi 2."
+  prompt_en: "Do you have a bank account? Yes 1, No 2."
+  dtmf:
+    "1": {set: {has_bank_account: "yes"}, hi: "Haan", en: "Yes"}
+    "2": {set: {has_bank_account: "no"}, hi: "Nahi", en: "No"}
+
+- id: Q081_AADHAAR_LINKED
+  layer: finance
+  writes: aadhaar_linked
+  requires: "has_bank_account == 'yes'"
+  gain: 5
+  why: "The single most common cause of a DBT payment failing after approval."
+  tags: [finance, documents, rejection_risk]
+  say_key: q081_aadhaar_linked
+  prompt_hi: "Khate se Aadhaar juda hai? Haan 1, nahi 2, pata nahi 3."
+  prompt_en: "Is Aadhaar linked to that account? Yes 1, No 2, Don't know 3."
+  dtmf:
+    "1": {set: {aadhaar_linked: "yes"}, hi: "Haan", en: "Yes"}
+    "2": {set: {aadhaar_linked: "no"}, hi: "Nahi", en: "No"}
+    "3": {set: {aadhaar_linked: unknown}, hi: "Pata nahi", en: "Don't know"}
+
+- id: Q082_HAS_AADHAAR
+  layer: finance
+  writes: has_aadhaar
+  requires: "has_bank_account == 'no'"
+  gain: 5
+  why: "If there is no bank account, Aadhaar decides whether opening one is even immediately possible."
+  tags: [finance, documents]
+  say_key: q082_aadhaar
+  prompt_hi: "Aadhaar card hai? Haan 1, nahi 2."
+  prompt_en: "Do you have an Aadhaar card? Yes 1, No 2."
+  dtmf:
+    "1": {set: {has_aadhaar: "yes"}, hi: "Haan", en: "Yes"}
+    "2": {set: {has_aadhaar: "no"}, hi: "Nahi", en: "No"}
+
+- id: Q083_HAS_INCOME_CERT
+  layer: finance
+  writes: has_income_cert
+  requires: "income_band in ['lt1l','1l_2_5l']"
+  gain: 3
+  why: "Income-linked schemes reject on a missing certificate more often than on income itself. Asked late because it refines the documents answer rather than the candidate set."
+  tags: [finance, documents, late, rejection_risk]
+  say_key: q083_income_cert
+  prompt_hi: "Aay praman patra hai? Haan 1, nahi 2."
+  prompt_en: "Do you have an income certificate? Yes 1, No 2."
+  dtmf:
+    "1": {set: {has_income_cert: "yes"}, hi: "Haan", en: "Yes"}
+    "2": {set: {has_income_cert: "no"}, hi: "Nahi", en: "No"}
+
+# ===========================================================================
+# LAYER 10 — DELIVERY / MISC (3). Advice-shaping, not narrowing. Kept from
+# v2 - genuinely catalogue-agnostic and shapes the where-to-apply answer.
+# ===========================================================================
+- id: Q090_APPLIED_BEFORE
+  layer: misc
+  writes: _applied_before
+  requires: "intent in ['find_for_me','by_purpose']"
+  gain: 4
+  why: "A past rejection is the strongest signal that the caller needs the documents field, not the eligibility field."
+  tags: [misc, rejection_risk]
+  say_key: q090_applied_before
+  prompt_hi: "Pehle kabhi aavedan kiya tha? Haan, mila 1. Haan, reject hua 2. Nahi 3."
+  prompt_en: "Have you applied before? Yes, approved 1. Yes, rejected 2. No 3."
+  dtmf:
+    "1": {set: {_applied_before: approved}, hi: "Mila", en: "Approved"}
+    "2": {set: {_applied_before: rejected}, hi: "Reject hua", en: "Rejected"}
+    "3": {set: {_applied_before: never}, hi: "Nahi", en: "Never"}
+
+- id: Q091_PHONE_TYPE
+  layer: misc
+  writes: _phone_type
+  requires: "language is answered"
+  gain: 4
+  why: "Decides whether the where-to-apply answer should say online portal, CSC visit, or block office, so the advice is actionable."
+  tags: [misc, delivery, advice_shaping]
+  say_key: q091_phone
+  prompt_hi: "Aap smartphone use karte hain? Haan 1, nahi 2."
+  prompt_en: "Do you use a smartphone? Yes 1, No 2."
+  dtmf:
+    "1": {set: {_phone_type: smart}, hi: "Haan", en: "Yes"}
+    "2": {set: {_phone_type: feature}, hi: "Nahi", en: "No"}
+
+- id: Q092_CSC_ACCESS
+  layer: misc
+  writes: _csc_access
+  requires: "_phone_type is answered"
+  gain: 3
+  why: "If there is no reachable Common Service Centre, the where-to-apply field must name the block office instead."
+  tags: [misc, delivery, advice_shaping]
+  say_key: q092_csc
+  prompt_hi: "Paas mein CSC ya jan seva kendra hai? Haan 1, nahi 2, pata nahi 3."
+  prompt_en: "Is there a CSC nearby? Yes 1, No 2, Don't know 3."
+  dtmf:
+    "1": {set: {_csc_access: "yes"}, hi: "Haan", en: "Yes"}
+    "2": {set: {_csc_access: "no"}, hi: "Nahi", en: "No"}
+    "3": {set: {_csc_access: unknown}, hi: "Pata nahi", en: "Don't know"}
+
+# ===========================================================================
+# LAYER 11 — KNOWN-SCHEME BRANCH (5). intent == known_scheme skips everything
+# above. Kept from v2 unchanged - catalogue-agnostic, well-designed:
+# speech-primary with a mandatory confirm-back loop (never act on an
+# unconfirmed spoken name), category fallback when ASR fails.
+# ===========================================================================
+- id: Q100_SCHEME_NAME
+  layer: known_scheme
+  writes: _named_scheme
+  requires: "intent == 'known_scheme'"
+  gain: 10
+  why: "Short-circuits the entire narrowing loop. One speech turn replaces six DTMF turns."
+  tags: [known_scheme, speech_primary]
+  say_key: q100_scheme_name
+  prompt_hi: "Yojna ka naam boliye."
+  prompt_en: "Say the scheme name."
+  # SPEECH IS THE POINT HERE. A scheme name cannot be typed on a keypad.
+  collect: {digits: 0, speech: true}
+  speech_intents: [SCHEME_NAME, UNKNOWN]
+  speech_attempts: 2
+  on_unclear:
+    hi: "Mujhe samajh nahi aaya. Yojna ka naam dobara boliye."
+    en: "I did not understand. Please say the scheme name again."
+  after_max_speech:
+    next: Q101_SCHEME_CATEGORY
+    hi: "Koi baat nahi. Button se dhoondhte hain."
+  # NEVER accept a spoken name without reading it back. This is the single
+  # guard against announcing a scheme the caller never asked for.
+  on_match: {next: Q100B_CONFIRM_SCHEME}
+  on_unknown: {next: Q101_SCHEME_CATEGORY}
+
+- id: Q100B_CONFIRM_SCHEME
+  layer: known_scheme
+  writes: _scheme_confirmed
+  requires: "_named_scheme is answered"
+  gain: 9
+  why: "Reads the matched scheme and its benefit back before committing, so a misheard name is caught by the caller and never by the demo audience."
+  tags: [known_scheme, confirmation, safety]
+  say_key: q100b_confirm
+  # Template. {name_short_hi} and {benefit_one_line} come from the DB row,
+  # never from the model. If the row has no benefit_one_line, say the name only.
+  prompt_hi: "Aap {name_short_hi} ki baat kar rahe hain. Isme {benefit_one_line}. Sahi hai to 1 dabaiye. Nahi to 2 dabaiye."
+  prompt_en: "You mean {name_short_hi}. It gives {benefit_one_line}. Press 1 if correct, 2 if not."
+  speech_intents: [YES, NO, UNKNOWN]
+  dtmf:
+    "1": {set: {_scheme_confirmed: "yes"}, hi: "Sahi hai", en: "Correct"}
+    "2": {set: {_scheme_confirmed: "no"},  hi: "Nahi", en: "No", next: Q100_SCHEME_NAME}
+  # Second miss on the same name means our matcher is wrong, not the caller.
+  # Do not loop a third time - go to the category menu.
+  on_second_no: {next: Q101_SCHEME_CATEGORY}
+
+- id: Q101_SCHEME_CATEGORY
+  layer: known_scheme
+  writes: theme
+  requires: "intent == 'known_scheme' and _named_scheme == 'UNKNOWN'"
+  gain: 7
+  why: "Fallback when ASR cannot resolve the spoken name. Never guess a scheme; narrow by the real theme menu instead."
+  tags: [known_scheme, fallback]
+  say_key: q101_scheme_category
+  prompt_hi: "Naam samajh nahi aaya. Kis tarah ki yojna? Vyapar 1. Bunkar 2. Machhli palan 3. Prashikshan 4. Kheti 5. Pension madad 6."
+  prompt_en: "Didn't catch that. What kind of scheme? Business 1. Craft 2. Fisheries 3. Training 4. Farming 5. Welfare 6."
+  dtmf:
+    "1": {set: {theme: business}, hi: "Vyapar", en: "Business"}
+    "2": {set: {theme: craft}, hi: "Bunkar", en: "Craft"}
+    "3": {set: {theme: fisheries}, hi: "Machhli palan", en: "Fisheries"}
+    "4": {set: {theme: training}, hi: "Prashikshan", en: "Training"}
+    "5": {set: {theme: farming}, hi: "Kheti", en: "Farming"}
+    "6": {set: {theme: welfare}, hi: "Pension madad", en: "Welfare"}
+
+- id: Q102_WHICH_FIELD
+  layer: known_scheme
+  writes: _field_wanted
+  requires: "_named_scheme is answered and _named_scheme != 'UNKNOWN'"
+  gain: 8
+  why: "When the scheme is known, the only remaining question is which field to read. One turn to the answer."
+  tags: [known_scheme, detail]
+  say_key: q102_which_field
+  prompt_hi: "Kya jaanna hai? Patrata 1. Kaagaz 2. Kahan aavedan 3. Aakhri tareekh 4. Fayda 5."
+  prompt_en: "What do you need? Eligibility 1. Documents 2. Where to apply 3. Deadline 4. Benefit 5."
+  dtmf:
+    "1": {set: {_field_wanted: eligibility}, hi: "Patrata", en: "Eligibility"}
+    "2": {set: {_field_wanted: documents}, hi: "Kaagaz", en: "Documents"}
+    "3": {set: {_field_wanted: where_to_apply}, hi: "Kahan", en: "Where"}
+    "4": {set: {_field_wanted: deadline}, hi: "Tareekh", en: "Deadline"}
+    "5": {set: {_field_wanted: benefit}, hi: "Fayda", en: "Benefit"}
+
+- id: Q103_ELIGIBILITY_CHECK
+  layer: known_scheme
+  writes: _wants_eligibility_check
+  requires: "_field_wanted == 'eligibility'"
+  gain: 6
+  why: "Offers to run the narrowing loop against one named scheme instead of the whole catalogue. Re-enters the DAG with a much smaller frontier."
+  tags: [known_scheme, bridge]
+  say_key: q103_elig_check
+  prompt_hi: "Kya main jaanch loon ki aap patra hain? Haan 1, nahi 2."
+  prompt_en: "Shall I check whether you qualify? Yes 1, No 2."
+  dtmf:
+    "1": {set: {_wants_eligibility_check: "yes"}, hi: "Haan", en: "Yes"}
+    "2": {set: {_wants_eligibility_check: "no"}, hi: "Nahi", en: "No"}
