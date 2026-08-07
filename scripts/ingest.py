@@ -109,7 +109,18 @@ CREATE TABLE scheme_rules (
 CREATE INDEX idx_rules_scheme ON scheme_rules(scheme_id);
 CREATE INDEX idx_rules_attr   ON scheme_rules(attribute);
 CREATE INDEX idx_schemes_theme ON schemes(theme, need_group);
+
+-- attribute dictionary (attribute_seed.sql loads into these). ord on
+-- attr_values is what narrow.py uses for gte/lte band comparisons.
+CREATE TABLE attributes (
+  attribute TEXT PRIMARY KEY, kind TEXT NOT NULL, label_en TEXT, notes TEXT);
+CREATE TABLE attr_values (
+  attribute TEXT NOT NULL, value TEXT NOT NULL, label_en TEXT, ord INTEGER,
+  PRIMARY KEY (attribute, value));
 """
+
+# attribute_seed.sql lives at the repo root, one level up from scripts/.
+ATTR_SEED_PATH = os.path.join(os.path.dirname(__file__), "..", "attribute_seed.sql")
 
 
 def extract_state(s):
@@ -175,6 +186,8 @@ def main():
         os.remove(DB)
     db = sqlite3.connect(DB)
     db.executescript(SCHEMA)
+    if os.path.exists(ATTR_SEED_PATH):
+        db.executescript(open(ATTR_SEED_PATH, encoding='utf-8').read())
 
     db.executemany('INSERT INTO detail_sections VALUES (?,?,?,?,?)',
         [(k, c, hi, en, i+1) for i, (k, c, hi, en) in enumerate(SECTIONS)])
