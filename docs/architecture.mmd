@@ -1,36 +1,64 @@
-%% Haqdaar - one turn of a phone call, as the code actually runs it.
-%% Green = deterministic (same input, same output, every call)
-%% Orange = a model (speech or language) - never trusted raw
-%% Blue   = a gate where model output is checked against a closed set
+%% Haqdaar - the whole system, with the constraints written down rather
+%% than left implicit.
+%%
+%% The one number that shapes everything: Twilio drops the call if a
+%% webhook takes longer than 15 seconds. So the diagram is split into
+%% what happens BEFORE any call (translation, audio rendering - slow,
+%% done once, committed as data) and what happens DURING one (must fit
+%% the budget). Anything that could be moved out of the live lane was.
+%%
+%% Green = deterministic   Orange = a model   Blue = a gate on model output
 flowchart TD
-    A([Caller speaks Hindi on the phone]) --> B[Twilio records the audio]
-    B --> C[Sarvam saaras:v3<br/>speech to Roman-script text]
-    C --> D{Knows a scheme name?}
 
-    D -->|"press 1"| E[LLM picks from a<br/>token-overlap shortlist]
-    E --> F{{"Gate: a shortlisted scheme, or NONE"}}
-    F --> G[Read the name back<br/>to confirm]
+    subgraph OFFLINE["① BEFORE ANY CALL · run once, committed as data · no time limit"]
+        direction TB
+        T1[("Scheme catalogue<br/>100 schemes · 372 rules<br/>benefits written in English")]
+        T2["Sarvam mayura:v1 · TRANSLATE<br/>English → Hindi in Roman script<br/>(mode: code-mixed)"]
+        T3{{"Check: every rupee figure and<br/>number survived the translation<br/>fails → keep the English"}}
+        T4[("benefit_one_line_hi<br/>97 of 100 rows")]
+        T5["Sarvam bulbul:v3 · SPEAK<br/>renders all 156 fixed lines to .wav"]
+        T6[("cache/tts · audio on disk<br/>keyed by content hash")]
+        T1 --> T2 --> T3 --> T4
+        T1 --> T5 --> T6
+    end
 
-    D -->|"press 2"| H[LLM maps the sentence<br/>to attribute values]
-    H --> I{{"Gate: only vocabulary the<br/>question bank declares"}}
+    subgraph LIVE["② DURING THE CALL · every turn must answer inside 15s"]
+        direction TB
+        A([Caller speaks Hindi on the phone])
+        A --> B["Twilio records the audio<br/>5s of silence ends the recording"]
+        B --> C["Sarvam saaras:v3 · LISTEN<br/>speech → Roman-script text<br/>NO translation: Roman is what we match against"]
+        C --> D{Knows a scheme name?}
 
-    G --> J[narrow · 372 rules<br/>unknown never eliminates]
-    I --> J
-    J --> K{Narrow enough,<br/>or 6 questions asked?}
+        D -->|"press 1"| E["LLM · shortlist by token overlap,<br/>then pick one"]
+        E --> F{{"Gate: a shortlisted scheme, or NONE<br/>NONE → we say we don't have it"}}
+        F --> G["Read the name back to confirm"]
 
-    K -->|no| L[select · the question with the<br/>highest information gain]
-    K -->|yes| M[present · English name<br/>+ Hindi benefit, verbatim-gated]
+        D -->|"press 2"| H["LLM · map the sentence to<br/>attribute values"]
+        H --> I{{"Gate: only vocabulary the question<br/>bank declares · the rest is dropped"}}
 
-    L --> N[Sarvam bulbul:v3<br/>cached audio]
-    M --> N
-    N --> A
+        G --> J["narrow · deterministic SQL<br/>unknown never eliminates a scheme"]
+        I --> J
+        J --> K{"Narrow enough,<br/>or 6 questions asked?"}
+        K -->|no| L["select · the question that<br/>cuts the list most"]
+        K -->|yes| M["present · English name<br/>+ Hindi benefit"]
+        M --> N{{"Gate: the benefit must be text we<br/>already hold, word for word"}}
+        N --> O["Play the cached audio"]
+        L --> O
+        O --> A
+    end
+
+    T4 -. "Hindi text is READ here,<br/>never translated mid-call" .-> M
+    T6 -. "audio is PLAYED here,<br/>almost never synthesised" .-> O
 
     classDef fixed fill:#E4EFE9,stroke:#1B6B4A,stroke-width:1.5px,color:#123D2B
     classDef model fill:#F6E9E0,stroke:#A8552A,stroke-width:1.5px,color:#6B3418
     classDef gate  fill:#E2E9F3,stroke:#2C4C7C,stroke-width:1.5px,color:#1B3050
-    classDef edge  fill:#EFF2EF,stroke:#5C6863,stroke-width:1.5px,color:#131B18
+    classDef store fill:#EFF2EF,stroke:#5C6863,stroke-width:1.5px,color:#131B18
+    classDef lane  fill:none,stroke:#B9C2BD,stroke-width:1px,color:#5C6863
 
-    class A edge
-    class B,G,J,L fixed
-    class C,E,H,M,N model
-    class F,I gate
+    class A store
+    class T1,T4,T6 store
+    class T2,T5,C,E,H model
+    class B,G,J,L,M,O fixed
+    class T3,F,I,N gate
+    class OFFLINE,LIVE lane
