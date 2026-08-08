@@ -1,54 +1,54 @@
-%% Haqdaar - the whole system, with the constraints written down rather
-%% than left implicit.
+%% Haqdaar - the whole system, laid out for a landscape slide.
 %%
-%% The one number that shapes everything: Twilio drops the call if a
-%% webhook takes longer than 15 seconds. So the diagram is split into
-%% what happens BEFORE any call (translation, audio rendering - slow,
-%% done once, committed as data) and what happens DURING one (must fit
-%% the budget). Anything that could be moved out of the live lane was.
+%% Reads LEFT TO RIGHT, in two lanes. The one number that shapes every
+%% decision: Twilio drops the call if a webhook takes longer than 15
+%% seconds. So the top lane is everything slow, done once before the
+%% phone ever rings; the bottom lane is the call itself. Anything that
+%% could be moved out of the live lane was.
 %%
 %% Green = deterministic   Orange = a model   Blue = a gate on model output
-flowchart TD
+flowchart LR
 
-    subgraph OFFLINE["① BEFORE ANY CALL · run once, committed as data · no time limit"]
-        direction TB
-        T1[("Scheme catalogue<br/>100 schemes · 372 rules<br/>benefits written in English")]
-        T2["Sarvam mayura:v1 · TRANSLATE<br/>English → Hindi in Roman script<br/>(mode: code-mixed)"]
-        T3{{"Check: every rupee figure and<br/>number survived the translation<br/>fails → keep the English"}}
-        T4[("benefit_one_line_hi<br/>97 of 100 rows")]
-        T5["Sarvam bulbul:v3 · SPEAK<br/>renders all 156 fixed lines to .wav"]
-        T6[("cache/tts · audio on disk<br/>keyed by content hash")]
+    subgraph OFFLINE["① BEFORE ANY CALL · once · no time limit"]
+        direction LR
+        T1[("100 schemes<br/>372 rules<br/>English text")]
+        T2["Sarvam mayura:v1<br/>TRANSLATE to Hindi"]
+        T3{{"Every rupee figure<br/>survived?<br/>no → keep English"}}
+        T4[("Hindi benefit lines<br/>97 of 100")]
+        T5["Sarvam bulbul:v3<br/>RENDER 156 lines"]
+        T6[("Audio cached<br/>on disk")]
         T1 --> T2 --> T3 --> T4
         T1 --> T5 --> T6
     end
 
-    subgraph LIVE["② DURING THE CALL · every turn must answer inside 15s"]
-        direction TB
-        A([Caller speaks Hindi on the phone])
-        A --> B["Twilio records the audio<br/>5s of silence ends the recording"]
-        B --> C["Sarvam saaras:v3 · LISTEN<br/>speech → Roman-script text<br/>NO translation: Roman is what we match against"]
-        C --> D{Knows a scheme name?}
+    subgraph LIVE["② DURING THE CALL · every turn answers inside 15s"]
+        direction LR
+        A([Caller speaks<br/>Hindi]) --> B["Twilio records<br/>5s silence ends it"]
+        B --> C["Sarvam saaras:v3<br/>speech → Roman text<br/>no translation needed"]
+        C --> D{"Knows a<br/>scheme name?"}
 
-        D -->|"press 1"| E["LLM · shortlist by token overlap,<br/>then pick one"]
-        E --> F{{"Gate: a shortlisted scheme, or NONE<br/>NONE → we say we don't have it"}}
-        F --> G["Read the name back to confirm"]
+        D -->|"press 1"| E["LLM picks from a<br/>token-overlap shortlist"]
+        E --> F{{"A shortlisted scheme,<br/>or NONE"}}
+        F --> G["Read the name<br/>back to confirm"]
 
-        D -->|"press 2"| H["LLM · map the sentence to<br/>attribute values"]
-        H --> I{{"Gate: only vocabulary the question<br/>bank declares · the rest is dropped"}}
+        D -->|"press 2"| H["LLM maps sentence<br/>to attribute values"]
+        H --> I{{"Only vocabulary the<br/>question bank declares"}}
 
-        G --> J["narrow · deterministic SQL<br/>unknown never eliminates a scheme"]
+        G --> J["narrow · SQL<br/>unknown never<br/>eliminates"]
         I --> J
-        J --> K{"Narrow enough,<br/>or 6 questions asked?"}
-        K -->|no| L["select · the question that<br/>cuts the list most"]
+        J --> K{"Narrow enough,<br/>or 6 questions?"}
+
+        K -->|no| L["select · the question<br/>that cuts the most"]
         K -->|yes| M["present · English name<br/>+ Hindi benefit"]
-        M --> N{{"Gate: the benefit must be text we<br/>already hold, word for word"}}
-        N --> O["Play the cached audio"]
-        L --> O
+        M --> N{{"Text we already<br/>hold, word for word"}}
+
+        L --> O["Play cached audio"]
+        N --> O
         O --> A
     end
 
-    T4 -. "Hindi text is READ here,<br/>never translated mid-call" .-> M
-    T6 -. "audio is PLAYED here,<br/>almost never synthesised" .-> O
+    T4 -. "read here, never<br/>translated mid-call" .-> M
+    T6 -. "played here, almost<br/>never synthesised" .-> O
 
     classDef fixed fill:#E4EFE9,stroke:#1B6B4A,stroke-width:1.5px,color:#123D2B
     classDef model fill:#F6E9E0,stroke:#A8552A,stroke-width:1.5px,color:#6B3418
