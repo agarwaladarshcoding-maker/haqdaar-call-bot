@@ -87,9 +87,12 @@ WAIT_TEXT = "Ek minute, main dekh raha hoon."
 TTS_LANG = "hi-IN"
 
 # Real seconds of silence a completed-but-empty <Record> represents: the
-# barge-in <Gather> (2s) plus the <Record> timeout (2s), rounded up. Fed
-# to engine.py's silence ladder, which counts real seconds cumulatively.
-SILENCE_AFTER_RECORD = 5
+# barge-in <Gather> plus the <Record> silence timeout, rounded up. Fed to
+# engine.py's silence ladder, which counts real seconds cumulatively.
+# DERIVED, never hardcoded: the ladder hangs up after enough accumulated
+# silence, so a number that drifts below the truth would drop callers who
+# had merely paused twice.
+SILENCE_AFTER_RECORD = config.GATHER_BARGE_IN_SECONDS + config.RECORD_SILENCE_SECONDS + 1
 
 router = APIRouter(prefix="/twilio", tags=["twilio"])
 
@@ -270,7 +273,7 @@ def _actions_to_twiml(
             # A short timeout when speech follows: this <Gather> is only
             # the barge-in window before the <Record> takes over. Without
             # a <Record> to fall through to, it stays the long wait.
-            timeout = 2 if speech else 15
+            timeout = config.GATHER_BARGE_IN_SECONDS if speech else 15
             parts.append(
                 f'<Gather input="dtmf" numDigits="{num_digits}" timeout="{timeout}" '
                 f'action="{escape(gather_action_url)}" method="POST">'
@@ -280,15 +283,17 @@ def _actions_to_twiml(
 
             if speech:
                 # trim-silence so a caller who pauses doesn't send us
-                # seconds of dead air to transcribe; timeout=2 ends the
-                # recording ~2s after they stop talking, which is what
-                # makes the system feel like it heard them. The old
-                # <Gather> had no speechTimeout at all, so Twilio waited
-                # its full 15s timeout before reacting - the single
-                # biggest reason the system "didn't hear" anyone.
+                # seconds of dead air to transcribe. The silence timeout
+                # is the delicate number: too long and the caller waits
+                # after finishing, too short and we cut them off before
+                # they begin. Two real calls proved 2s was far too short -
+                # it clipped a caller at 2.0s of audio ("Aa") and then
+                # recorded 4.0s of nothing - so it now lives in config
+                # where it can be tuned without touching TwiML.
                 parts.append(
                     f'<Record action="{escape(recording_action_url)}" method="POST" '
-                    f'maxLength="{config.RECORD_MAX_SECONDS}" timeout="2" playBeep="false" '
+                    f'maxLength="{config.RECORD_MAX_SECONDS}" '
+                    f'timeout="{config.RECORD_SILENCE_SECONDS}" playBeep="false" '
                     f'trim="trim-silence" finishOnKey="0123456789*#" />'
                 )
             else:

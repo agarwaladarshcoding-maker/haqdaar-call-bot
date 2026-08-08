@@ -31,6 +31,21 @@ STT_TIMEOUT_MS = int(os.getenv("STT_TIMEOUT_MS", "6000"))
 # aur mujhe kheti ke liye loan chahiye", short enough that a caller who
 # forgets to stop talking doesn't stall the call.
 RECORD_MAX_SECONDS = int(os.getenv("RECORD_MAX_SECONDS", "12"))
+# Seconds of silence that end a <Record>. This is NOT only trailing
+# silence - Twilio applies it from the moment recording starts, so it is
+# also how long a caller is allowed to think before answering. At 2s two
+# real calls were cut off mid-breath (2.0s of audio transcribed as "Aa",
+# then 4.0s transcribed as nothing), which is precisely the reported
+# "system does not hear when we say something". A helpline caller
+# composing a sentence in Hindi needs longer than a voice assistant's
+# user does.
+RECORD_SILENCE_SECONDS = int(os.getenv("RECORD_SILENCE_SECONDS", "5"))
+# Barge-in window: the <Gather> that wraps the prompt exists only so a
+# keypress during the audio is caught. Kept short because the <Record>
+# immediately after it accepts keys too (finishOnKey), so nothing is lost
+# by falling through fast - and every second here is a second the caller
+# spends in silence after the prompt ends.
+GATHER_BARGE_IN_SECONDS = int(os.getenv("GATHER_BARGE_IN_SECONDS", "1"))
 RECORDING_FETCH_TIMEOUT_MS = int(os.getenv("RECORDING_FETCH_TIMEOUT_MS", "5000"))
 # understand.py runs once per call on the opening utterance and saves
 # several turns when it works, so it gets a longer budget than the

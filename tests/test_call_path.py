@@ -174,7 +174,33 @@ def test_speech_question_emits_record_pointing_at_the_sarvam_endpoint(client):
     assert 'finishOnKey="0123456789*#"' in resp.text, "a keypress must still end the recording"
     # The barge-in Gather must be short - it is only the window before the
     # Record takes over, not the old 15s wait that made callers feel unheard.
-    assert 'timeout="2"' in resp.text
+    assert f'<Gather input="dtmf" numDigits="1" timeout="{config.GATHER_BARGE_IN_SECONDS}"' in resp.text
+    assert f'timeout="{config.RECORD_SILENCE_SECONDS}"' in resp.text
+
+
+def test_the_caller_gets_time_to_think_before_the_recording_cuts_them_off():
+    """REGRESSION, from two real calls. Twilio's <Record timeout> counts
+    silence from the moment recording starts, not just after speech - so
+    it is really "how long may the caller think?". At 2s it clipped a
+    caller after 2.0s of audio (Sarvam heard "Aa", confidence 0.15) and
+    then recorded 4.0s of nothing, which is exactly what "the system does
+    not hear when we say something" felt like from the handset.
+
+    Asserting a floor rather than an exact value: the number is tunable,
+    but dropping it back near the barge-in window recreates the bug."""
+    assert config.RECORD_SILENCE_SECONDS >= 4
+    assert config.RECORD_SILENCE_SECONDS > config.GATHER_BARGE_IN_SECONDS
+
+
+def test_the_silence_ladder_is_told_the_truth_about_an_empty_recording():
+    """engine.py hangs up on accumulated silence, so SILENCE_AFTER_RECORD
+    must be at least the real wall-clock time an empty <Record> burns. If
+    it under-reports, a caller who simply paused twice gets hung up on -
+    and it under-reports the moment either timeout is tuned upward, which
+    is why it is derived instead of written down."""
+    from haqdaar.twilio_adapter import SILENCE_AFTER_RECORD
+
+    assert SILENCE_AFTER_RECORD >= config.GATHER_BARGE_IN_SECONDS + config.RECORD_SILENCE_SECONDS
 
 
 def test_speech_disabled_gather_has_no_record_and_keeps_the_silence_redirect():
