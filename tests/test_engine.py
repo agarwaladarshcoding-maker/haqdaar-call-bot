@@ -4,7 +4,7 @@ C5, D7, E7, I6 are BLOCKERS and get their own explicit, unambiguous test
 (not just folded into a bigger scenario) so a regression here fails loudly.
 """
 from haqdaar.bank import load_bank
-from haqdaar.engine import CallState, step
+from haqdaar.engine import ROOT_QUESTION_ID, CallState, step
 
 BANK = load_bank()
 
@@ -18,10 +18,10 @@ def answer(state, key, db):
 
 
 def to_persona_node(db):
-    """language=hi, intent=find_for_me -> lands on Q003B_PERSONA with all
-    20 demo schemes still candidates."""
+    """intent=find_for_me -> lands on Q003B_PERSONA with all 20 demo
+    schemes still candidates. One turn shorter than it used to be:
+    Q001_LANGUAGE was removed, so intent is now the very first question."""
     state, _ = start(db)
-    state, _ = answer(state, "1", db)  # language = hi
     state, actions = answer(state, "2", db)  # intent = find_for_me
     return state, actions
 
@@ -29,13 +29,13 @@ def to_persona_node(db):
 # ---------------------------------------------------------------------------
 # C. Global keys
 # ---------------------------------------------------------------------------
-def test_c1_zero_returns_to_language_and_wipes_answers(demo_db):
+def test_c1_zero_returns_to_root_and_wipes_answers(demo_db):
     state, _ = to_persona_node(demo_db)
     state, _ = answer(state, "1", demo_db)  # persona = business, narrows to 4
     assert state.answers
 
     state, actions = step(state, {"dtmf": "0"}, BANK, demo_db)
-    assert state.current_question == "Q001_LANGUAGE"
+    assert state.current_question == ROOT_QUESTION_ID
     assert state.answers == {}
     assert len(state.candidates) == 20
 
@@ -69,9 +69,9 @@ def test_c4_c5_hash_undoes_answer_and_regrows_candidates(demo_db):
 
 def test_c6_hash_at_first_question_does_not_crash_or_move(demo_db):
     state, _ = start(demo_db)
-    assert state.current_question == "Q001_LANGUAGE"
+    assert state.current_question == ROOT_QUESTION_ID
     state, actions = step(state, {"dtmf": "#"}, BANK, demo_db)
-    assert state.current_question == "Q001_LANGUAGE"
+    assert state.current_question == ROOT_QUESTION_ID
     assert state.answers == {}
     assert actions  # produced some action, did not raise
 
@@ -81,7 +81,7 @@ def test_c7_five_hashes_lands_at_first_question_no_negative_index(demo_db):
     state, _ = answer(state, "1", demo_db)
     for _ in range(5):
         state, actions = step(state, {"dtmf": "#"}, BANK, demo_db)
-    assert state.current_question == "Q001_LANGUAGE"
+    assert state.current_question == ROOT_QUESTION_ID
     assert state.answers == {}
 
 
@@ -95,50 +95,62 @@ def test_c8_zero_mid_narrowing_wipes_asked_and_restores_full_candidates(demo_db)
 
 
 # ---------------------------------------------------------------------------
-# D. Language node
+# D. Root node
+#
+# Was "Language node". Q001_LANGUAGE is gone (see question_bank.yaml for
+# why), so every guarantee this section asserted about "the first thing a
+# caller hits" now has to hold for Q002_INTENT instead. The guarantees
+# themselves are unchanged - they were never really about language, they
+# were about not failing the caller at the very first prompt.
+#
+# D2 ("speech ignored at the language node") is deliberately gone rather
+# than ported: it existed because Q001 could not run ASR before knowing
+# which language to run it in. No question in the bank disables speech any
+# more, so there is no node for it to describe. The engine code path is
+# still there and still correct (_handle_speech's `collect.speech` branch)
+# and is now covered directly in test_call_path.py, driven by an action
+# rather than by a bank question that no longer exists.
 # ---------------------------------------------------------------------------
-def test_d1_offers_three_language_options(demo_db):
+def test_d1_root_offers_three_options(demo_db):
     state, actions = start(demo_db)
     say = actions[0]["say"]
     assert "1" in say and "2" in say and "3" in say
 
 
-def test_d2_speech_ignored_at_language_node(demo_db):
-    state, _ = start(demo_db)
-    state2, actions = step(state, {"speech": "hindi please", "confidence": 0.95}, BANK, demo_db)
-    assert state2.current_question == "Q001_LANGUAGE"
-    assert state2.answers == {}
-
-
-def test_d4_invalid_digit_at_language_node_replays_options(demo_db):
+def test_d4_invalid_digit_at_root_replays_options(demo_db):
     state, _ = start(demo_db)
     state2, actions = step(state, {"dtmf": "7"}, BANK, demo_db)
-    assert state2.current_question == "Q001_LANGUAGE"
+    assert state2.current_question == ROOT_QUESTION_ID
     assert state2.invalid_count == 1
     assert state2.answers == {}
 
 
-def test_d5_zero_at_language_node_replays_language_prompt(demo_db):
+def test_d5_zero_at_root_replays_root_prompt(demo_db):
     state, _ = start(demo_db)
     state2, actions = step(state, {"dtmf": "0"}, BANK, demo_db)
-    assert state2.current_question == "Q001_LANGUAGE"
+    assert state2.current_question == ROOT_QUESTION_ID
 
 
-def test_d6_hash_at_language_node_does_not_exit_call(demo_db):
+def test_d6_hash_at_root_does_not_exit_call(demo_db):
     state, _ = start(demo_db)
     state2, actions = step(state, {"dtmf": "#"}, BANK, demo_db)
     assert state2.phase != "ended"
-    assert state2.current_question == "Q001_LANGUAGE"
+    assert state2.current_question == ROOT_QUESTION_ID
 
 
-def test_d7_silence_30s_at_language_defaults_to_hindi_and_continues(demo_db):
+def test_d7_silence_30s_at_root_defaults_and_continues(demo_db):
     """BLOCKER. Ending the call because of hesitation at the very first
-    prompt is the worst possible failure - they never heard a scheme."""
+    prompt is the worst possible failure - they never heard a scheme.
+
+    The guarantee moved with the root: Q001_LANGUAGE carried the
+    on_timeout default that made this pass, and when it was deleted the
+    root had to inherit it or this blocker would have silently regressed
+    into "30s of hesitation hangs up on the caller"."""
     state, _ = start(demo_db)
     state2, actions = step(state, {"timeout": 30}, BANK, demo_db)
     assert state2.phase != "ended"
-    assert state2.answers.get("language") == "hi"
-    assert state2.current_question == "Q002_INTENT"
+    assert state2.answers.get("intent") == "find_for_me"
+    assert state2.current_question is not None
 
 
 def test_d8_three_wrong_presses_collapses_not_hangs_up(demo_db):
@@ -146,7 +158,7 @@ def test_d8_three_wrong_presses_collapses_not_hangs_up(demo_db):
     for _ in range(3):
         state, actions = step(state, {"dtmf": "9"}, BANK, demo_db)
     assert state.phase != "ended"
-    assert state.current_question == "Q001_LANGUAGE"
+    assert state.current_question == ROOT_QUESTION_ID
 
 
 # ---------------------------------------------------------------------------

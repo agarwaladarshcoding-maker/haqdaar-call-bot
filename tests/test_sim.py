@@ -12,6 +12,7 @@ import time
 import pytest
 
 from haqdaar import sim
+from haqdaar.engine import ROOT_QUESTION_ID
 
 ROOT_SRC_ON_PATH = True  # conftest.py already inserts src/ onto sys.path
 
@@ -78,9 +79,9 @@ def test_m2_hash_twice_mid_call_recovers_candidate_count(server):
 
 
 # ---------------------------------------------------------------------------
-# M3: '0' at question 4 -> full restart from language
+# M3: '0' at question 4 -> full restart from the root question
 # ---------------------------------------------------------------------------
-def test_m3_zero_mid_call_restarts_from_language(server):
+def test_m3_zero_mid_call_restarts_from_root(server):
     import httpx
 
     with httpx.Client(base_url=server, timeout=5.0) as client:
@@ -90,7 +91,7 @@ def test_m3_zero_mid_call_restarts_from_language(server):
             body = client.post("/call/event", json={"call_id": call_id, "event": {"dtmf": key}}).json()
         assert len(body["state"]["asked"]) == 3
         body = client.post("/call/event", json={"call_id": call_id, "event": {"dtmf": "0"}}).json()
-        assert body["state"]["current_question"] == "Q001_LANGUAGE"
+        assert body["state"]["current_question"] == ROOT_QUESTION_ID
         assert body["state"]["asked"] == []
         assert body["state"]["answers"] == {}
         assert body["state"]["candidate_count"] == 20  # full demo catalogue restored
@@ -190,7 +191,7 @@ def test_m12_star_after_every_prompt_replays(server):
         body = client.post("/call/event", json={"call_id": call_id, "event": {"dtmf": "*"}}).json()
         replay_say = next(a["say"] for a in body["actions"] if "say" in a)
         assert replay_say == first_prompt
-        assert body["state"]["current_question"] == "Q001_LANGUAGE"  # unmoved
+        assert body["state"]["current_question"] == ROOT_QUESTION_ID  # unmoved
         client.delete(f"/call/{call_id}")
 
 

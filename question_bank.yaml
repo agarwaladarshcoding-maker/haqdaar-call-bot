@@ -34,7 +34,7 @@
 
 meta:
   version: 3
-  question_count: 47   # validator-enforced
+  question_count: 46   # validator-enforced
   language_default: hi
   max_questions_per_call: 10        # hard cap
   target_questions_per_call: 6      # design target
@@ -91,54 +91,49 @@ defaults:
 questions:
 
 # ===========================================================================
-# LAYER 0 — SESSION (3). Always asked, in this order, before anything else.
+# LAYER 0 — SESSION (2). Always asked, in this order, before anything else.
+#
+# Q001_LANGUAGE IS GONE (was here, was the root). It asked the caller to
+# choose Hindi / English / both, and it was the wrong question to open on:
+#   - Option 3 ("hinglish") was never implemented. _prompt_text() only ever
+#     branched on "en", so pressing 3 silently behaved as Hindi. A dead
+#     option on the very first prompt of every call.
+#   - It cost a whole turn out of a 6-turn budget to ask something we can
+#     answer for the caller.
+#   - It could not accept speech at all (chicken-and-egg: no ASR language
+#     chosen yet), so every caller had to start with a keypress.
+# The system now has ONE fixed voice: Hindi narration in Roman script,
+# with English left in place where English is what people say (scheme
+# names, "business", "training"). That is what the prompts below already
+# were, and what Sarvam's bulbul:v3 already voices correctly - so this
+# removes a question rather than adding a translation layer.
 # ===========================================================================
-- id: Q001_LANGUAGE
-  layer: session
-  writes: language
-  requires: always
-  gain: 10
-  why: "Sets TTS voice and prompt set for the whole call. Nothing can be said correctly before this."
-  tags: [session, mandatory, first]
-  say_key: q001_language
-  # BUTTONS ONLY. No speech, no barge-in. We cannot run speech recognition
-  # before we know which language to run it in - it is a chicken-and-egg.
-  collect: {digits: 1, speech: false}
-  speech_disabled_reason: "Language not yet known; ASR model cannot be selected."
-  barge_in: false
-  prompt_hi: "Namaste. Hindi ke liye 1 dabaiye. For English, press 2. Dono ke liye 3 dabaiye."
-  prompt_en: "Hello. For Hindi, press 1. For English, press 2. For both, press 3."
-  dtmf:
-    "1": {set: {language: hi}, hi: "Hindi", en: "Hindi"}
-    "2": {set: {language: en}, hi: "English", en: "English"}
-    "3": {set: {language: hinglish}, hi: "Hindi aur English", en: "Hindi and English"}
-  on_invalid:
-    action: replay_options
-    hi: "Sirf 1, 2 ya 3 dabaiye."
-  on_max_invalid:
-    action: default
-    set: {language: hi}
-    hi: "Hum Hindi mein aage badhte hain."
-  on_timeout:
-    action: default
-    set: {language: hi}
-    hi: "Hum Hindi mein aage badhte hain."
-
 - id: Q002_INTENT
   layer: session
   writes: intent
-  requires: "language is answered"
+  requires: always
   gain: 10
   why: "Splits the call into three completely different subgraphs. Highest-value branch in the system."
   tags: [session, mandatory, router]
   say_key: q002_intent
-  prompt_hi: "Agar aapko yojna ka naam pata hai to 1 dabaiye. Apne liye yojna dhoondhni hai to 2 dabaiye. Kisi kaam ke liye madad chahiye to 3 dabaiye."
-  prompt_en: "If you know the scheme name, press 1. To find schemes for you, press 2. For help with a specific need, press 3."
+  prompt_hi: "Namaste. Agar aapko yojna ka naam pata hai to 1 dabaiye. Apne liye yojna dhoondhni hai to 2 dabaiye. Kisi kaam ke liye madad chahiye to 3 dabaiye."
+  prompt_en: "Hello. If you know the scheme name, press 1. To find schemes for you, press 2. For help with a specific need, press 3."
   dtmf:
     "1": {set: {intent: known_scheme}, hi: "Naam pata hai", en: "I know the name"}
     "2": {set: {intent: find_for_me}, hi: "Meri yojna dhoondho", en: "Find schemes for me"}
     "3": {set: {intent: by_purpose}, hi: "Kaam ke hisaab se", en: "By purpose"}
   speech_intents: [KNOWN_SCHEME, FIND_FOR_ME, BY_PURPOSE, UNKNOWN]
+  # Inherited from Q001_LANGUAGE, which used to be the root and carried
+  # this. TEST_CASES.md D7 is a BLOCKER: hesitating at the very first
+  # prompt must never end the call, because the caller then hangs up
+  # having heard no scheme at all - the worst possible outcome. Whichever
+  # question is the root has to own that guarantee, so it moved here with
+  # the root. find_for_me is the safe default: it is the branch that asks
+  # questions and always reaches a result.
+  on_timeout:
+    action: default
+    set: {intent: find_for_me}
+    hi: "Koi baat nahi, main aapke liye yojna dhoondhta hoon."
 
 - id: Q003_ON_BEHALF
   layer: session
@@ -775,7 +770,10 @@ questions:
 - id: Q091_PHONE_TYPE
   layer: misc
   writes: _phone_type
-  requires: "language is answered"
+  # Was "language is answered", which only ever meant "after the session
+  # layer". Q001_LANGUAGE is gone, so this says the same thing against a
+  # question that still exists.
+  requires: "intent is answered"
   gain: 4
   why: "Decides whether the where-to-apply answer should say online portal, CSC visit, or block office, so the advice is actionable."
   tags: [misc, delivery, advice_shaping]

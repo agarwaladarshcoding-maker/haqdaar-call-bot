@@ -58,8 +58,25 @@ def _first_sentence(text: str) -> str:
 
 
 def _fallback_presentation(candidate: Candidate, benefits_text: str) -> Presentation:
+    """Name in English, benefit in Hindi - the call's fixed convention.
+
+    `name_short_hi` is a misnomer inherited from ingest: it holds ENGLISH,
+    a truncated scheme_name ("AFFDF-Financial Assistance For Treatment Of
+    Serious Diseases To"), not Hindi. It is still preferred over
+    scheme_name because the truncation is what keeps a 30-word official
+    title speakable on a phone - but nothing here should be read as
+    "prefer the Hindi name", because there isn't one.
+
+    benefit_one_line_hi comes from scripts/translate_benefits.py. It is
+    empty until that has been run, and empty for any row whose translation
+    failed the number-survival check - both fall through to the English
+    sentence, which is always safe to say because it is the DB's own text."""
     name = candidate.name_short_hi or candidate.scheme_name
-    line = candidate.benefit_one_line or _first_sentence(benefits_text)
+    line = (
+        candidate.benefit_one_line_hi
+        or candidate.benefit_one_line
+        or _first_sentence(benefits_text)
+    )
     return Presentation(slug=candidate.slug, spoken_name=name, benefit_line=line, source="fallback")
 
 

@@ -58,6 +58,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from xml.sax.saxutils import escape
 
+import httpx
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import Response
 
@@ -85,12 +86,18 @@ from haqdaar.engine import CallState, step
 WAIT_TEXT = "Ek minute, main dekh raha hoon."
 TTS_LANG = "hi-IN"
 
+# Real seconds of silence a completed-but-empty <Record> represents: the
+# barge-in <Gather> (2s) plus the <Record> timeout (2s), rounded up. Fed
+# to engine.py's silence ladder, which counts real seconds cumulatively.
+SILENCE_AFTER_RECORD = 5
+
 router = APIRouter(prefix="/twilio", tags=["twilio"])
 
 _lock = threading.Lock()
 _sessions: dict[str, CallState] = {}          # call_id -> state
 _call_sid_to_call_id: dict[str, str] = {}     # Twilio CallSid -> our call_id
 _pending_events: dict[str, dict[str, Any]] = {}     # Twilio CallSid -> event
+_pending_timings: dict[str, dict[str, float]] = {}  # STT timings, carried into the turn's log
 _call_logs: dict[str, "CallLog"] = {}         # call_id -> diagnostic log
 
 _bank: Bank | None = None
@@ -210,17 +217,34 @@ def _say_twiml(text: str, lang_code: str, audio_base_url: str, deadline: float |
     return f'<Say language="{lang_code}">{escape(text)}</Say>'
 
 
-def _actions_to_twiml(actions: list[dict], gather_action_url: str, audio_base_url: str, language: str | None) -> str:
+def _actions_to_twiml(
+    actions: list[dict],
+    gather_action_url: str,
+    audio_base_url: str,
+    language: str | None,
+    recording_action_url: str | None = None,
+) -> str:
     """{"say"} -> <Play> of a real Sarvam clip when available, <Say>
-    fallback otherwise. {"gather"} -> <Gather> wrapping any preceding
-    audio. {"end"} -> <Hangup>.
+    fallback otherwise. {"gather"} -> <Gather> (buttons) and, when the
+    question accepts speech, a following <Record> so SARVAM does the
+    transcription. {"end"} -> <Hangup>.
 
-    `language` is the call's actual selected language (state.language,
-    "hi"/"en"/None-before-chosen) - previously this whole function
-    silently assumed hi-IN everywhere, which meant an English-speaking
-    caller would still get audio generated/cached under the wrong
-    language key and Twilio's <Gather> would listen for Hindi speech
-    regardless of what the caller actually chose."""
+    WHY <Record> AND NOT <Gather input="speech">: Twilio's own recognizer
+    was doing the transcription, and it cannot handle a caller who says
+    "main kisan hoon" and an English scheme name in the same sentence.
+    <Gather> gives you Twilio's text and no way to reach the audio, so
+    the only way to put Sarvam in the loop is to record and transcribe
+    ourselves. voice.stt() existed for exactly this and was never called
+    by anything - it was dead code until now.
+
+    The <Gather>/<Record> pair, in order, is what keeps BOTH inputs live:
+      <Gather input="dtmf" timeout="2"> wrapping the prompt audio - a
+      keypress interrupts the prompt (barge-in) and skips the recording
+      entirely, so button-only callers are as fast as they ever were.
+      <Record finishOnKey="0123456789*#"> catches speech if no key came,
+      and still reports Digits if the caller presses one mid-recording.
+    A speech-disabled question (Q001-style, collect.speech false) emits
+    the <Gather> alone, exactly as before."""
     lang_code = _sarvam_lang(language)
     parts = ["<?xml version=\"1.0\" encoding=\"UTF-8\"?>", "<Response>"]
     pending_says: list[str] = []
@@ -237,23 +261,41 @@ def _actions_to_twiml(actions: list[dict], gather_action_url: str, audio_base_ur
         elif "gather" in a:
             g = a["gather"]
             digits = g.get("digits", 1)
-            speech = g.get("speech", True)
-            input_types = "dtmf speech" if speech else "dtmf"
-            # Bug fix (first live call): no language attribute here meant
-            # Twilio's OWN speech recognizer defaulted to en-US and tried
-            # to parse Hindi speech, which is why it seemed to "not hear"
-            # the caller at all - it was mishearing everything.
+            speech = g.get("speech", True) and recording_action_url is not None
+
+            # numDigits=0 is invalid TwiML; a speech-only question (e.g.
+            # Q100_SCHEME_NAME, collect.digits 0) still needs the <Gather>
+            # to play the prompt and allow a global key (0/*/#).
+            num_digits = max(1, digits)
+            # A short timeout when speech follows: this <Gather> is only
+            # the barge-in window before the <Record> takes over. Without
+            # a <Record> to fall through to, it stays the long wait.
+            timeout = 2 if speech else 15
             parts.append(
-                f'<Gather input="{input_types}" numDigits="{digits}" timeout="15" '
-                f'language="{lang_code}" '
+                f'<Gather input="dtmf" numDigits="{num_digits}" timeout="{timeout}" '
                 f'action="{escape(gather_action_url)}" method="POST">'
             )
             flush_says()
             parts.append("</Gather>")
-            # Twilio only fires the webhook if the caller enters something;
-            # falling through here (nothing entered) replays the same
-            # <Gather> as a silence retry, matching engine.py's own ladder.
-            parts.append(f'<Redirect method="POST">{escape(gather_action_url)}?silence=1</Redirect>')
+
+            if speech:
+                # trim-silence so a caller who pauses doesn't send us
+                # seconds of dead air to transcribe; timeout=2 ends the
+                # recording ~2s after they stop talking, which is what
+                # makes the system feel like it heard them. The old
+                # <Gather> had no speechTimeout at all, so Twilio waited
+                # its full 15s timeout before reacting - the single
+                # biggest reason the system "didn't hear" anyone.
+                parts.append(
+                    f'<Record action="{escape(recording_action_url)}" method="POST" '
+                    f'maxLength="{config.RECORD_MAX_SECONDS}" timeout="2" playBeep="false" '
+                    f'trim="trim-silence" finishOnKey="0123456789*#" />'
+                )
+            else:
+                # No recording to fall through to: nothing entered replays
+                # the same prompt as a silence retry, matching engine.py's
+                # own silence ladder.
+                parts.append(f'<Redirect method="POST">{escape(gather_action_url)}?silence=1</Redirect>')
         elif a.get("end"):
             flush_says()
             parts.append("<Hangup/>")
@@ -306,7 +348,29 @@ def _record_turn(
         _print_call_report(log)
 
 
-def _step_and_render(call_id: str, call_sid: str, event: dict, gather_url: str, audio_base_url: str) -> Response:
+@dataclass(frozen=True)
+class CallUrls:
+    """The four absolute URLs a turn's TwiML needs. Built in one place
+    because they were previously recomputed inline in four endpoints, and
+    a fifth (recording) would have made that five chances to drift."""
+    base: str
+    gather: str
+    recording: str
+
+
+def _urls(request: Request, call_sid: str) -> CallUrls:
+    from urllib.parse import urlparse
+
+    parsed = urlparse(_get_external_url(request))
+    base = f"{parsed.scheme}://{parsed.netloc}"
+    return CallUrls(
+        base=base,
+        gather=f"{base}/twilio/gather/{call_sid}",
+        recording=f"{base}/twilio/recording/{call_sid}",
+    )
+
+
+def _step_and_render(call_id: str, call_sid: str, event: dict, urls: CallUrls, extra_timings: dict | None = None) -> Response:
     bank = _get_bank()
     t0 = time.monotonic()
     with _lock:
@@ -316,13 +380,14 @@ def _step_and_render(call_id: str, call_sid: str, event: dict, gather_url: str, 
         new_state, actions = step(state, event, bank, config.DB_PATH)
         _sessions[call_id] = new_state
     t_step = time.monotonic()
-    twiml = _actions_to_twiml(actions, gather_url, audio_base_url, new_state.language)
+    twiml = _actions_to_twiml(actions, urls.gather, urls.base, new_state.language, urls.recording)
     t_tts = time.monotonic()
 
     # Timed separately because these are the two stages that can blow past
     # Twilio's 15s webhook timeout, and knowing WHICH one did is the whole
     # point of logging them.
     timings = {
+        **(extra_timings or {}),
         "engine_ms": round((t_step - t0) * 1000, 1),
         "tts_ms": round((t_tts - t_step) * 1000, 1),
         "total_ms": round((t_tts - t0) * 1000, 1),
@@ -361,13 +426,8 @@ async def twilio_voice(request: Request) -> Response:
         _call_logs[call_id] = CallLog(call_sid=call_sid)
     _record_turn(call_id, call_sid, {}, new_state, actions)
 
-    # Build gather_url and audio_base_url using the external URL's origin
-    from urllib.parse import urlparse
-    parsed = urlparse(external_url)
-    base_url = f"{parsed.scheme}://{parsed.netloc}"
-    gather_url = f"{base_url}/twilio/gather/{call_sid}"
-    audio_base_url = base_url
-    twiml = _actions_to_twiml(actions, gather_url, audio_base_url, new_state.language)
+    urls = _urls(request, call_sid)
+    twiml = _actions_to_twiml(actions, urls.gather, urls.base, new_state.language, urls.recording)
     return Response(content=twiml, media_type="application/xml")
 
 
@@ -394,11 +454,7 @@ async def twilio_gather(
     if call_id is None:
         raise HTTPException(status_code=404, detail=f"unknown CallSid: {call_sid}")
 
-    from urllib.parse import urlparse
-    parsed = urlparse(_get_external_url(request))
-    base_url = f"{parsed.scheme}://{parsed.netloc}"
-    gather_url = f"{base_url}/twilio/gather/{call_sid}"
-    audio_base_url = base_url
+    urls = _urls(request, call_sid)
 
     if request.query_params.get("silence"):
         event: dict[str, Any] = {"timeout": 15}
@@ -415,19 +471,23 @@ async def twilio_gather(
         language = state.language
 
     calllog.log_event(call_sid, "input", event=event, phase=state.phase)
+    return _wait_then_process(call_sid, urls.base, language)
 
+
+def _wait_then_process(call_sid: str, base_url: str, language: str | None) -> Response:
+    """Plays "ek minute" and bounces to /process, which does the slow work
+    (STT, LLM, narrowing). Splitting the turn in two is what keeps a
+    caller from sitting in silence while we think.
+
+    Was <Say language="{state.language}"> here, which rendered
+    language="None"/"hi" - neither is a value Twilio accepts, so this verb
+    was invalid on EVERY turn of every call. It now goes through the same
+    Sarvam <Play> path as every other spoken line, which also means the
+    wait message is in the call's own voice, not Twilio's built-in one."""
     process_url = f"{base_url}/twilio/process/{call_sid}"
-
-    # Was <Say language="{state.language}"> here, which rendered
-    # language="None"/"hi" - neither is a value Twilio accepts, so this
-    # verb was invalid on EVERY turn of every call. Now it goes through
-    # the same Sarvam <Play> path as every other spoken line, which also
-    # means the wait message is in the same voice as the rest of the call
-    # instead of Twilio's built-in one.
-    lang_code = _sarvam_lang(language)
     twiml = (
         '<?xml version="1.0" encoding="UTF-8"?><Response>'
-        f"{_say_twiml(WAIT_TEXT, lang_code, base_url)}"
+        f"{_say_twiml(WAIT_TEXT, _sarvam_lang(language), base_url)}"
         f'<Redirect method="POST">{escape(process_url)}</Redirect>'
         "</Response>"
     )
@@ -452,16 +512,126 @@ async def twilio_process(
     if call_id is None:
         raise HTTPException(status_code=404, detail=f"unknown CallSid: {call_sid}")
 
-    from urllib.parse import urlparse
-    parsed = urlparse(_get_external_url(request))
-    base_url = f"{parsed.scheme}://{parsed.netloc}"
-    gather_url = f"{base_url}/twilio/gather/{call_sid}"
-    audio_base_url = base_url
-
     with _lock:
         event = _pending_events.pop(call_id, {"timeout": 15})
+        extra_timings = _pending_timings.pop(call_id, {})
 
-    return _step_and_render(call_id, call_sid, event, gather_url, audio_base_url)
+    return _step_and_render(call_id, call_sid, event, _urls(request, call_sid), extra_timings)
+
+
+def _fetch_recording(recording_url: str) -> bytes | None:
+    """Downloads a Twilio recording as 8kHz WAV. Twilio serves the raw
+    RecordingUrl with no extension; appending .wav is the documented way
+    to get WAV rather than MP3, and Sarvam wants WAV.
+
+    Authenticated with the account SID/token we already have - recordings
+    are private to the account, so an unauthenticated GET returns 401.
+    Returns None on any failure; the caller treats that exactly like an
+    unclear utterance, which engine.py's existing ladder already handles."""
+    if not (config.TWILIO_ACCOUNT_SID and config.TWILIO_AUTH_TOKEN):
+        return None
+    try:
+        resp = httpx.get(
+            f"{recording_url}.wav",
+            auth=(config.TWILIO_ACCOUNT_SID, config.TWILIO_AUTH_TOKEN),
+            timeout=config.RECORDING_FETCH_TIMEOUT_MS / 1000.0,
+            follow_redirects=True,
+        )
+        resp.raise_for_status()
+        return resp.content
+    except httpx.HTTPError:
+        return None
+
+
+@router.post("/recording/{call_sid}")
+async def twilio_recording(
+    call_sid: str,
+    request: Request,
+    RecordingUrl: str | None = Form(default=None),
+    RecordingDuration: str | None = Form(default=None),
+    Digits: str | None = Form(default=None),
+) -> Response:
+    """Fires when a <Record> ends. This is where SARVAM replaces Twilio's
+    own recognizer: we fetch the audio Twilio just captured and transcribe
+    it ourselves, because Twilio's hi-IN model cannot handle a caller who
+    mixes Hindi and English - which is how people actually talk.
+
+    Three outcomes, all of which the engine already knows how to handle:
+      Digits set        -> the caller pressed a key during the recording
+                           (finishOnKey), so it's a plain dtmf event and
+                           no transcription is needed at all.
+      no/short audio    -> a timeout event, same as any other silence.
+      audio             -> Sarvam transcript as a speech event.
+
+    Transcription happens HERE rather than in /process so the raw
+    transcript is logged even when the engine later rejects it - "what did
+    Sarvam actually hear?" is the first question worth answering when a
+    call goes wrong, and it must be answerable separately from "what did
+    the engine do with it"."""
+    form = await request.form()
+    params = {k: str(v) for k, v in form.items()}
+    signature = request.headers.get("X-Twilio-Signature")
+    if not verify_twilio_signature(_get_external_url(request), params, signature):
+        raise HTTPException(status_code=403, detail="invalid Twilio signature")
+
+    with _lock:
+        call_id = _call_sid_to_call_id.get(call_sid)
+    if call_id is None:
+        raise HTTPException(status_code=404, detail=f"unknown CallSid: {call_sid}")
+
+    urls = _urls(request, call_sid)
+    try:
+        duration = float(RecordingDuration or 0)
+    except ValueError:
+        duration = 0.0
+
+    timings: dict[str, float] = {}
+    if Digits:
+        event: dict[str, Any] = {"dtmf": Digits}
+        _log_line(call_sid, f"recording ended on keypress {Digits!r}")
+    elif not RecordingUrl or duration < 1:
+        # Under a second is a cough or a hangup artifact, not speech.
+        #
+        # SILENCE_AFTER_RECORD, not the 15 the <Gather> path reports:
+        # engine.py's silence ladder is cumulative and calibrated in real
+        # seconds (5 nudge / 15 two-options / 25 are-you-there / 30 end).
+        # This path's actual silence is the 2s Gather plus the 2s Record,
+        # so reporting 15 would have hung up on a caller who simply paused
+        # to think - two thoughtful pauses would hit 30 and end the call
+        # after about ten real seconds.
+        event = {"timeout": SILENCE_AFTER_RECORD}
+        _log_line(call_sid, f"no usable recording (duration={duration}s) -> silence")
+    else:
+        t0 = time.monotonic()
+        audio = _fetch_recording(RecordingUrl)
+        t_fetch = time.monotonic()
+        transcript, confidence = voice.stt(audio) if audio else ("", 0.0)
+        t_stt = time.monotonic()
+        timings = {
+            "recording_fetch_ms": round((t_fetch - t0) * 1000, 1),
+            "stt_ms": round((t_stt - t_fetch) * 1000, 1),
+        }
+        event = {"speech": transcript, "confidence": confidence}
+        _log_line(
+            call_sid,
+            f'\033[35mSARVAM heard: "{transcript}"\033[0m (conf={confidence:.2f}, '
+            f"{duration}s audio, {timings['stt_ms']:.0f}ms)",
+        )
+        calllog.log_event(
+            call_sid, "stt",
+            transcript=transcript, confidence=confidence,
+            audio_seconds=duration, fetched=bool(audio), timings_ms=timings,
+        )
+
+    with _lock:
+        _pending_events[call_id] = event
+        _pending_timings[call_id] = timings
+        language = _sessions[call_id].language
+
+    calllog.log_event(call_sid, "input", event=event)
+    # Same two-hop as /gather: play "ek minute" first, then do the slow
+    # engine work in /process, so the caller isn't left in silence.
+    return _wait_then_process(call_sid, urls.base, language)
 
 
 @router.get("/audio/{clip_id}")

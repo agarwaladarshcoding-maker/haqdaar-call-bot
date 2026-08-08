@@ -48,7 +48,13 @@ MAIN_MENU_QUESTION_ID = "__MAIN_MENU__"  # sentinel: no question asked yet
 @dataclass(frozen=True)
 class CallState:
     phase: str = "asking"  # asking | presenting | ended
-    language: str | None = None
+    # Fixed for the whole call now that Q001_LANGUAGE is gone: Hindi
+    # narration in Roman script, English left where English is what people
+    # actually say (scheme names, "business", "training"). No question
+    # writes this any more; it stays on CallState because _prompt_text and
+    # _options_text still read it to pick prompt_hi vs prompt_en, and a
+    # future English-first deployment would only need to flip the default.
+    language: str = "hi"
     answers: dict[str, Any] = field(default_factory=dict)
     asked: tuple[str, ...] = field(default_factory=tuple)
     current_question: str | None = None
@@ -224,23 +230,24 @@ def _benefits_text_by_slug(candidates: tuple[Candidate, ...], db_path: str | Non
         conn.close()
 
 
+ROOT_QUESTION_ID = "Q002_INTENT"  # was Q001_LANGUAGE, removed - see question_bank.yaml
+
+
 def _start_call(bank: Bank, db_path: str | None) -> tuple[CallState, list[dict]]:
     state = CallState()
     state = _recompute_candidates(state, db_path)
-    q = bank.question("Q001_LANGUAGE")
-    return _enter_question(state, q, bank, db_path)
+    return _enter_question(state, bank.question(ROOT_QUESTION_ID), bank, db_path)
 
 
 def _global_key(state: CallState, key: str, bank: Bank, db_path: str | None) -> tuple[CallState, list[dict]] | None:
     """C1-C8. Returns None if `key` is not a global key at all."""
     if key == "0":
-        # C1/C8: back to language, answers wiped, asked wiped, candidates
-        # reset to the full unfiltered set (recomputed from {} answers, not
-        # hand-set to some remembered "all schemes" list).
+        # C1/C8: back to the root question, answers wiped, asked wiped,
+        # candidates reset to the full unfiltered set (recomputed from {}
+        # answers, not hand-set to some remembered "all schemes" list).
         fresh = CallState(language=state.language)
         fresh = _recompute_candidates(fresh, db_path)
-        q = bank.question("Q001_LANGUAGE")
-        return _enter_question(fresh, q, bank, db_path)
+        return _enter_question(fresh, bank.question(ROOT_QUESTION_ID), bank, db_path)
 
     if key == "*":
         # C2/C3: replay last_spoken verbatim, no state change at all beyond
@@ -259,7 +266,7 @@ def _global_key(state: CallState, key: str, bank: Bank, db_path: str | None) -> 
         # docstring, this is C5, the single most important line in engine.py.
         if not state.asked:
             # C6: at the first question, '#' stays put, does not crash.
-            q = bank.question(state.current_question) if state.current_question else bank.question("Q001_LANGUAGE")
+            q = bank.question(state.current_question) if state.current_question else bank.question(ROOT_QUESTION_ID)
             return _enter_question(state, q, bank, db_path)
 
         last_qid = state.asked[-1]
@@ -267,13 +274,12 @@ def _global_key(state: CallState, key: str, bank: Bank, db_path: str | None) -> 
         written_attr = last_q.raw["writes"]
         new_answers = {k: v for k, v in state.answers.items() if k != written_attr}
         new_asked = state.asked[:-1]
-        undone_state = replace(state, answers=new_answers, asked=new_asked, language=(
-            new_answers.get("language", state.language) if written_attr != "language" else None
-        ))
-        # language is special-cased above only insofar as undoing the very
-        # first answer should also forget the language choice, matching
-        # C7's "5x # lands at the first question" (not stuck mid-ladder
-        # with a language set but no way to re-ask it).
+        # The language special-case that used to live here (undoing the
+        # first answer also cleared state.language, so the language
+        # question could be re-asked) is gone with Q001_LANGUAGE: language
+        # is now fixed for the whole call and no question writes it, so
+        # there is nothing to undo.
+        undone_state = replace(state, answers=new_answers, asked=new_asked)
         undone_state = _recompute_candidates(undone_state, db_path)
         # Re-ask the question that WROTE the attribute we just undid -
         # that's "the previous question" C4 refers to.

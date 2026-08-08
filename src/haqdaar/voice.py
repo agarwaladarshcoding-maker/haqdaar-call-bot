@@ -39,6 +39,7 @@ TTS_MODEL = "bulbul:v3"
 TTS_SPEAKER = "priya"
 TTS_SAMPLE_RATE = 8000  # telephony narrowband, not Sarvam's 22050 default
 TTS_PACE = 0.85  # slower than Sarvam's default 1.0 - first live call felt rushed
+STT_MODEL = "saaras:v3"  # saarika:v2.5 is being deprecated by Sarvam
 
 
 class VoiceError(Exception):
@@ -112,14 +113,29 @@ def stt(audio: bytes, lang: str | None = None) -> tuple[str, float]:
     (E1-E4) already routes to a retry then a drop to DTMF-only - the same
     path a real low-confidence Sarvam result would take.
 
-    Sarvam's saarika:v2.5 response has no confidence field at all (just
-    transcript/language_code/request_id, confirmed against the live API,
-    not assumed) - a successful call with a non-empty transcript is
-    reported as confidence 1.0, and engine.py's own text-matching against
-    each question's valid answer vocabulary is the real quality gate
-    (already proven correct: an out-of-vocabulary transcript like "haan"
-    on a question that doesn't accept it routes to "unclear" regardless
-    of the confidence value passed in)."""
+    MODEL: saaras:v3, not the saarika:v2.5 this used to call - Sarvam is
+    deprecating saarika, and saaras:v3 is the model that handles
+    code-mixed Hindi/English telephony speech, which is what our callers
+    actually speak.
+
+    MODE=translit (Roman script) is the load-bearing choice here. Callers
+    say "main kisan hoon" and scheme names in English in the same breath.
+    saaras:v3's default `transcribe` mode returns Devanagari
+    ("एक मिनट मैं देख रहा हूँ"), but EVERYTHING downstream matches against
+    Roman text - the scheme names in the DB, the DTMF option labels, the
+    question bank's own prompts - so Devanagari would fail every string
+    comparison in engine.py. `translit` returns "Ek minute main dekh raha
+    hoon", which is the same convention the rest of the codebase already
+    speaks. Both modes verified against the live API before choosing.
+
+    LANGUAGE_CODE=unknown lets Sarvam detect Hindi vs English per
+    utterance rather than forcing one, which is the whole point when the
+    caller mixes them. Overridable via SARVAM_STT_LANG for debugging.
+
+    Confidence comes from Sarvam's own `language_probability` when
+    present. It is a language-detection confidence, not a transcription
+    one, so it is a coarse signal - engine.py's matching against each
+    question's valid answer vocabulary remains the real quality gate."""
     if not audio or not config.SARVAM_API_KEY:
         return "", 0.0
     lang = lang or config.SARVAM_STT_LANG
@@ -129,13 +145,21 @@ def stt(audio: bytes, lang: str | None = None) -> tuple[str, float]:
             f"{_BASE_URL}/speech-to-text",
             headers={"api-subscription-key": config.SARVAM_API_KEY},
             files={"file": ("audio.wav", audio, "audio/wav")},
-            data={"language_code": lang, "model": "saarika:v2.5"},
-            timeout=5.0,
+            data={
+                "model": STT_MODEL,
+                "language_code": lang,
+                "mode": config.SARVAM_STT_MODE,
+            },
+            timeout=config.STT_TIMEOUT_MS / 1000.0,
         )
         resp.raise_for_status()
         body = resp.json()
-        transcript = body.get("transcript") or ""
+        transcript = (body.get("transcript") or "").strip()
+        probability = body.get("language_probability")
     except (httpx.HTTPError, ValueError, KeyError, TypeError):
         return "", 0.0
 
-    return transcript, (1.0 if transcript else 0.0)
+    if not transcript:
+        return "", 0.0
+    confidence = float(probability) if isinstance(probability, (int, float)) else 1.0
+    return transcript, confidence

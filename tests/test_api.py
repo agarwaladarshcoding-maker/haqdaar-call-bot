@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from haqdaar import api, config
+from haqdaar.engine import ROOT_QUESTION_ID
 
 
 @pytest.fixture()
@@ -24,27 +25,28 @@ def client(demo_db, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Basic wiring: start returns the language prompt, actions match engine.py
+# Basic wiring: start returns the root prompt, actions match engine.py
+# (was the language prompt - Q001_LANGUAGE was removed, see question_bank.yaml)
 # ---------------------------------------------------------------------------
-def test_call_start_returns_language_prompt(client):
+def test_call_start_returns_root_prompt(client):
     resp = client.post("/call/start")
     assert resp.status_code == 200
     body = resp.json()
     assert "call_id" in body
     assert any("say" in a for a in body["actions"])
     say_text = next(a["say"] for a in body["actions"] if "say" in a)
-    assert "Hindi" in say_text or "Namaste" in say_text
-    assert body["state"]["current_question"] == "Q001_LANGUAGE"
+    assert "Namaste" in say_text
+    assert body["state"]["current_question"] == ROOT_QUESTION_ID
 
 
 def test_call_event_advances_state(client):
     start = client.post("/call/start").json()
     call_id = start["call_id"]
-    resp = client.post("/call/event", json={"call_id": call_id, "event": {"dtmf": "1"}})
+    resp = client.post("/call/event", json={"call_id": call_id, "event": {"dtmf": "2"}})
     assert resp.status_code == 200
     body = resp.json()
-    assert body["state"]["answers"].get("language") == "hi"
-    assert body["state"]["current_question"] != "Q001_LANGUAGE"
+    assert body["state"]["answers"].get("intent") == "find_for_me"
+    assert body["state"]["current_question"] != ROOT_QUESTION_ID
 
 
 def test_health_reports_db_and_bank_loaded(client):
@@ -64,13 +66,13 @@ def test_l5_two_calls_never_mix_sessions(client):
     call_b = client.post("/call/start").json()["call_id"]
     assert call_a != call_b
 
-    client.post("/call/event", json={"call_id": call_a, "event": {"dtmf": "1"}})  # hi
-    client.post("/call/event", json={"call_id": call_b, "event": {"dtmf": "2"}})  # en
+    client.post("/call/event", json={"call_id": call_a, "event": {"dtmf": "1"}})  # known_scheme
+    client.post("/call/event", json={"call_id": call_b, "event": {"dtmf": "2"}})  # find_for_me
 
     state_a = client.get(f"/call/{call_a}/state").json()
     state_b = client.get(f"/call/{call_b}/state").json()
-    assert state_a["answers"]["language"] == "hi"
-    assert state_b["answers"]["language"] == "en"
+    assert state_a["answers"]["intent"] == "known_scheme"
+    assert state_b["answers"]["intent"] == "find_for_me"
 
 
 def test_l5_many_concurrent_calls_stay_isolated(client):
@@ -81,9 +83,9 @@ def test_l5_many_concurrent_calls_stay_isolated(client):
         key = "1" if i % 2 == 0 else "2"
         client.post("/call/event", json={"call_id": cid, "event": {"dtmf": key}})
     for i, cid in enumerate(call_ids):
-        expected = "hi" if i % 2 == 0 else "en"
+        expected = "known_scheme" if i % 2 == 0 else "find_for_me"
         state = client.get(f"/call/{cid}/state").json()
-        assert state["answers"]["language"] == expected
+        assert state["answers"]["intent"] == expected
 
 
 # ---------------------------------------------------------------------------

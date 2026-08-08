@@ -20,7 +20,18 @@ TTS_TIMEOUT_MS = int(os.getenv("TTS_TIMEOUT_MS", "4000"))         # one Sarvam T
 
 SARVAM_API_KEY = os.getenv("SARVAM_API_KEY", "")
 SARVAM_TTS_LANG = os.getenv("SARVAM_TTS_LANG", "hi-IN")
-SARVAM_STT_LANG = os.getenv("SARVAM_STT_LANG", "hi-IN")
+# "unknown" = let Sarvam detect per utterance. Callers mix Hindi and
+# English freely, so pinning one language is worse than detecting it.
+SARVAM_STT_LANG = os.getenv("SARVAM_STT_LANG", "unknown")
+# "translit" = Roman script out. See voice.stt()'s docstring: everything
+# downstream matches against Roman text, so Devanagari breaks matching.
+SARVAM_STT_MODE = os.getenv("SARVAM_STT_MODE", "translit")
+STT_TIMEOUT_MS = int(os.getenv("STT_TIMEOUT_MS", "6000"))
+# Cap on one recorded caller utterance. Long enough for "main kisan hoon
+# aur mujhe kheti ke liye loan chahiye", short enough that a caller who
+# forgets to stop talking doesn't stall the call.
+RECORD_MAX_SECONDS = int(os.getenv("RECORD_MAX_SECONDS", "12"))
+RECORDING_FETCH_TIMEOUT_MS = int(os.getenv("RECORDING_FETCH_TIMEOUT_MS", "5000"))
 
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")

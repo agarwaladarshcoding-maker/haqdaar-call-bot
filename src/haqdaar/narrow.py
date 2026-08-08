@@ -37,6 +37,11 @@ class Candidate:
     theme: str
     verified: int
     score: float
+    # Hindi benefit line from scripts/translate_benefits.py. Defaults to
+    # None because the column does not exist in a freshly seeded DB (and
+    # tests build Candidates directly) - present.py falls back to the
+    # English sentence whenever it is absent.
+    benefit_one_line_hi: str | None = None
 
 
 def _ord_lookup(conn: sqlite3.Connection) -> dict[tuple[str, str], int]:
@@ -121,6 +126,12 @@ def narrow(answers: dict[str, Any], db_path: str | None = None) -> list[Candidat
                     theme=s["theme"],
                     verified=s["verified"],
                     score=score,
+                    # .keys() check, not s["..."]: the column is added by
+                    # scripts/translate_benefits.py and is simply absent
+                    # from a freshly seeded DB, where indexing would raise.
+                    benefit_one_line_hi=(
+                        s["benefit_one_line_hi"] if "benefit_one_line_hi" in s.keys() else None
+                    ),
                 )
             )
 

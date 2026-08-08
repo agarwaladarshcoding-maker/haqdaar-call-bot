@@ -122,8 +122,14 @@ def test_voice_webhook_uses_play_when_sarvam_key_present(client, monkeypatch, tm
     monkeypatch.setattr("haqdaar.voice.CACHE_DIR", str(tmp_path / "tts"))
 
     from haqdaar import voice as voice_module
+    from haqdaar.bank import load_bank
+    from haqdaar.engine import ROOT_QUESTION_ID
 
-    prompt = "Namaste. Hindi ke liye 1 dabaiye. For English, press 2. Dono ke liye 3 dabaiye."
+    # Read the prompt from the bank rather than hardcoding it - a hardcoded
+    # copy silently stopped matching when the root question changed, and a
+    # cache "hit" that misses just falls back to <Say>, so the test failed
+    # for a reason that had nothing to do with what it was checking.
+    prompt = load_bank().question(ROOT_QUESTION_ID).get("prompt_hi")
     path = voice_module._cache_path(prompt, "hi-IN")
     import os
 
