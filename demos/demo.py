@@ -52,8 +52,7 @@ C_OFF = "\033[0m"
 # since "5" on its own tells a viewer nothing.
 SCRIPT: list[tuple[str, str]] = [
     ("1", "presses 1  —  \"haan, mujhe naam pata hai\""),
-    ("!silence:15", "…says nothing. The system offers the buttons instead."),
-    ("1", "presses 1  —  takes the menu"),
+    ("1", "presses 1  —  browses by category instead"),
     ("5", "presses 5  —  kheti / farming"),
     ("1", "presses 1  —  dhaan / paddy"),
 ]

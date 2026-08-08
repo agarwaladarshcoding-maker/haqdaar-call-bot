@@ -38,6 +38,26 @@ from haqdaar import config
 NGROK_API = "http://127.0.0.1:4040/api/tunnels"
 TWILIO_API = "https://api.twilio.com/2010-04-01/Accounts/{sid}/Calls.json"
 
+# The same four keypresses demos/demo.py sends, printed the moment the
+# phone starts ringing - there is no time to go looking for them once it
+# is in your hand, and a fumbled keypress mid-recording costs a retake.
+#
+# Keypresses only, deliberately: DTMF is a first-class input, so this
+# path is the product working rather than a fallback, and it keeps room
+# noise and a speech round trip out of a recording.
+PRESS_SHEET = """
+  \033[1mPRESS, IN ORDER\033[0m                              \033[90m100 schemes\033[0m
+  \033[90m(Twilio's trial message plays first - any key gets past it)\033[0m
+
+    \033[1m1\033[0m   "haan, naam pata hai"
+    \033[1m1\033[0m   browse by category instead
+    \033[1m5\033[0m   kheti / farming                        \033[32m100 -> 6\033[0m
+    \033[1m1\033[0m   dhaan / paddy                          \033[32m  6 -> 4\033[0m
+
+  Then it reads out the four paddy schemes.
+  \033[90mNo talking needed. Watch the run.sh terminal for the live count.\033[0m
+"""
+
 
 def detect_public_url() -> str | None:
     """Ask the local ngrok agent for its current HTTPS tunnel.
@@ -119,6 +139,7 @@ def main() -> int:
     print(f"  webhook: {voice_url}")
     if args.dry_run:
         print("  (dry run - no call placed)")
+        print(PRESS_SHEET)  # so the sheet can be rehearsed without ringing anyone
         return 0
 
     resp = httpx.post(
@@ -145,6 +166,7 @@ def main() -> int:
     sid = resp.json().get("sid", "?")
     print(f"  ringing - CallSid {sid}")
     print(f"  transcript will be at calls/<today>/{sid}.jsonl")
+    print(PRESS_SHEET)
     return 0
 
 
