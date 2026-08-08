@@ -32,6 +32,10 @@ STT_TIMEOUT_MS = int(os.getenv("STT_TIMEOUT_MS", "6000"))
 # forgets to stop talking doesn't stall the call.
 RECORD_MAX_SECONDS = int(os.getenv("RECORD_MAX_SECONDS", "12"))
 RECORDING_FETCH_TIMEOUT_MS = int(os.getenv("RECORDING_FETCH_TIMEOUT_MS", "5000"))
+# understand.py runs once per call on the opening utterance and saves
+# several turns when it works, so it gets a longer budget than the
+# per-turn LLM calls.
+UNDERSTAND_TIMEOUT_MS = int(os.getenv("UNDERSTAND_TIMEOUT_MS", "6000"))
 
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")

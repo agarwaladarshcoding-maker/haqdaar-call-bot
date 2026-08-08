@@ -45,7 +45,7 @@ def test_concurrent_calls_under_real_thread_contention(client):
     assert len(set(call_ids)) == N  # every call_id unique, no collision
 
     for i, (call_id, state) in enumerate(results):
-        expected = "known_scheme" if i % 2 == 0 else "find_for_me"
+        expected = "known_scheme" if i % 2 == 0 else "by_purpose"
         assert state["answers"]["intent"] == expected, f"call {i} got cross-contaminated"
 
 
@@ -62,7 +62,7 @@ def test_concurrent_events_on_many_calls_interleaved(client):
 
     for i, cid in enumerate(call_ids):
         state = client.get(f"/call/{cid}/state").json()
-        expected = "known_scheme" if keys[i] == "1" else "find_for_me"
+        expected = "known_scheme" if keys[i] == "1" else "by_purpose"
         assert state["answers"]["intent"] == expected
 
 

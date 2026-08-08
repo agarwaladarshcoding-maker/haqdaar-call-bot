@@ -18,11 +18,20 @@ def answer(state, key, db):
 
 
 def to_persona_node(db):
-    """intent=find_for_me -> lands on Q003B_PERSONA with all 20 demo
-    schemes still candidates. One turn shorter than it used to be:
-    Q001_LANGUAGE was removed, so intent is now the very first question."""
+    """Lands on Q003B_PERSONA with all 20 demo schemes still candidates.
+
+    Route: root -> "2" (I need help) -> Q000_OPEN_NEED, the free-speech
+    question -> two unclear attempts -> its after_max_speech.next, which
+    is Q003B_PERSONA. Going via the unclear ladder rather than by SAYING
+    something is deliberate: it needs no LLM (conftest blanks the API key
+    for hermeticity) and lands on a known question every time, so the
+    C/E/F/G ladder tests below still start from a fixed, dtmf-bearing
+    node."""
     state, _ = start(db)
-    state, actions = answer(state, "2", db)  # intent = find_for_me
+    state, _ = answer(state, "2", db)  # intent = by_purpose -> Q000_OPEN_NEED
+    for _ in range(2):
+        state, actions = step(state, {"speech": "", "confidence": 0.0}, BANK, db)
+    assert state.current_question == "Q003B_PERSONA", state.current_question
     return state, actions
 
 
@@ -111,10 +120,14 @@ def test_c8_zero_mid_narrowing_wipes_asked_and_restores_full_candidates(demo_db)
 # and is now covered directly in test_call_path.py, driven by an action
 # rather than by a bank question that no longer exists.
 # ---------------------------------------------------------------------------
-def test_d1_root_offers_three_options(demo_db):
+def test_d1_root_offers_the_two_scenario_fork(demo_db):
+    """Two options, not three. The old third ("find schemes for me" vs
+    "help with a specific need") was a distinction the system cared about
+    and a caller could not answer - both mean "I have no name, help me"."""
     state, actions = start(demo_db)
     say = actions[0]["say"]
-    assert "1" in say and "2" in say and "3" in say
+    assert "1" in say and "2" in say
+    assert "3" not in say
 
 
 def test_d4_invalid_digit_at_root_replays_options(demo_db):
@@ -149,7 +162,7 @@ def test_d7_silence_30s_at_root_defaults_and_continues(demo_db):
     state, _ = start(demo_db)
     state2, actions = step(state, {"timeout": 30}, BANK, demo_db)
     assert state2.phase != "ended"
-    assert state2.answers.get("intent") == "find_for_me"
+    assert state2.answers.get("intent") == "by_purpose"
     assert state2.current_question is not None
 
 

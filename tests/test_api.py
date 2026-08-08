@@ -45,7 +45,7 @@ def test_call_event_advances_state(client):
     resp = client.post("/call/event", json={"call_id": call_id, "event": {"dtmf": "2"}})
     assert resp.status_code == 200
     body = resp.json()
-    assert body["state"]["answers"].get("intent") == "find_for_me"
+    assert body["state"]["answers"].get("intent") == "by_purpose"
     assert body["state"]["current_question"] != ROOT_QUESTION_ID
 
 
@@ -67,12 +67,12 @@ def test_l5_two_calls_never_mix_sessions(client):
     assert call_a != call_b
 
     client.post("/call/event", json={"call_id": call_a, "event": {"dtmf": "1"}})  # known_scheme
-    client.post("/call/event", json={"call_id": call_b, "event": {"dtmf": "2"}})  # find_for_me
+    client.post("/call/event", json={"call_id": call_b, "event": {"dtmf": "2"}})  # by_purpose (I need help)
 
     state_a = client.get(f"/call/{call_a}/state").json()
     state_b = client.get(f"/call/{call_b}/state").json()
     assert state_a["answers"]["intent"] == "known_scheme"
-    assert state_b["answers"]["intent"] == "find_for_me"
+    assert state_b["answers"]["intent"] == "by_purpose"
 
 
 def test_l5_many_concurrent_calls_stay_isolated(client):
@@ -83,7 +83,7 @@ def test_l5_many_concurrent_calls_stay_isolated(client):
         key = "1" if i % 2 == 0 else "2"
         client.post("/call/event", json={"call_id": cid, "event": {"dtmf": key}})
     for i, cid in enumerate(call_ids):
-        expected = "known_scheme" if i % 2 == 0 else "find_for_me"
+        expected = "known_scheme" if i % 2 == 0 else "by_purpose"
         state = client.get(f"/call/{cid}/state").json()
         assert state["answers"]["intent"] == expected
 

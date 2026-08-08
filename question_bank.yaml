@@ -34,7 +34,7 @@
 
 meta:
   version: 3
-  question_count: 46   # validator-enforced
+  question_count: 47   # validator-enforced
   language_default: hi
   max_questions_per_call: 10        # hard cap
   target_questions_per_call: 6      # design target
@@ -116,13 +116,29 @@ questions:
   why: "Splits the call into three completely different subgraphs. Highest-value branch in the system."
   tags: [session, mandatory, router]
   say_key: q002_intent
-  prompt_hi: "Namaste. Agar aapko yojna ka naam pata hai to 1 dabaiye. Apne liye yojna dhoondhni hai to 2 dabaiye. Kisi kaam ke liye madad chahiye to 3 dabaiye."
-  prompt_en: "Hello. If you know the scheme name, press 1. To find schemes for you, press 2. For help with a specific need, press 3."
+  # TWO options, not three. The old third option split "find schemes for
+  # me" from "help with a specific need", which is a distinction the
+  # system cares about and a caller does not - both mean "I don't have a
+  # name, help me". Collapsing them removes a choice nobody could answer
+  # confidently and makes the whole call a single clear fork:
+  # do you have a name, or do you have a need?
+  #
+  # Option 2 sets by_purpose (not find_for_me) deliberately: by_purpose is
+  # the value Q004_THEME requires, and Q004_THEME is the single strongest
+  # narrowing question in the bank. Routing to find_for_me would have made
+  # it unreachable and quietly thrown away the best question we have.
+  prompt_hi: "Namaste. Kya aapko kisi yojna ka naam pata hai? Haan to 1 dabaiye. Nahi, madad chahiye to 2 dabaiye."
+  prompt_en: "Hello. Do you know the name of a scheme? Press 1 for yes. Press 2 if you need help finding one."
+  # `next` makes the fork explicit rather than leaving it to the ranker.
+  # Both successors are speech-only questions, and the ranker scores a
+  # speech-only question as maximally UNinformative (it cannot simulate
+  # branches for something with no dtmf options), so it would rank them
+  # last and ask a demographic question instead. The two scenarios are a
+  # designed sequence, so they are declared, not inferred.
   dtmf:
-    "1": {set: {intent: known_scheme}, hi: "Naam pata hai", en: "I know the name"}
-    "2": {set: {intent: find_for_me}, hi: "Meri yojna dhoondho", en: "Find schemes for me"}
-    "3": {set: {intent: by_purpose}, hi: "Kaam ke hisaab se", en: "By purpose"}
-  speech_intents: [KNOWN_SCHEME, FIND_FOR_ME, BY_PURPOSE, UNKNOWN]
+    "1": {set: {intent: known_scheme}, hi: "Naam pata hai", en: "I know the name", next: Q100_SCHEME_NAME}
+    "2": {set: {intent: by_purpose}, hi: "Madad chahiye", en: "I need help", next: Q000_OPEN_NEED}
+  speech_intents: [KNOWN_SCHEME, BY_PURPOSE, UNKNOWN]
   # Inherited from Q001_LANGUAGE, which used to be the root and carried
   # this. TEST_CASES.md D7 is a BLOCKER: hesitating at the very first
   # prompt must never end the call, because the caller then hangs up
@@ -132,8 +148,46 @@ questions:
   # questions and always reaches a result.
   on_timeout:
     action: default
-    set: {intent: find_for_me}
+    set: {intent: by_purpose}
     hi: "Koi baat nahi, main aapke liye yojna dhoondhta hoon."
+
+# The open question. This is the one that makes the call feel like talking
+# to a person instead of walking a phone tree: the caller says what they
+# need in their own words, understand.py maps that onto real attributes,
+# and the question loop starts from what they already told us rather than
+# asking it all back. "main kisan hoon" should be answered with "kya aapke
+# paas zameen hai?", not with "are you a business or an individual?".
+#
+# Writes _open_need (a marker that we asked) rather than the extracted
+# attributes themselves - one question still writes exactly one attribute,
+# which is the bank's contract. Engine.py merges the extracted attributes
+# into `answers` separately; bank.askable() then skips their questions
+# automatically, because it already excludes any question whose `writes`
+# attribute is already answered.
+#
+# Everything degrades: no LLM key, a timeout, or an unusable utterance all
+# extract nothing, and the caller simply gets asked the normal questions.
+- id: Q000_OPEN_NEED
+  layer: session
+  writes: _open_need
+  requires: "intent == 'by_purpose'"
+  gain: 10
+  why: "Lets the caller state their need in one sentence, which can answer several attributes at once and save four or five turns."
+  tags: [session, speech_primary, router]
+  say_key: q000_open_need
+  collect: {digits: 0, speech: true}
+  prompt_hi: "Bataiye, aapko kis cheez ke liye madad chahiye? Aap Hindi ya English mein bol sakte hain."
+  prompt_en: "Tell me, what do you need help with? You can speak in Hindi or English."
+  speech_intents: [OPEN_NEED, UNKNOWN]
+  speech_attempts: 2
+  on_unclear:
+    hi: "Mujhe samajh nahi aaya. Thoda saaf boliye, aapko kis cheez ke liye madad chahiye?"
+    en: "I did not catch that. Please say again, what do you need help with?"
+  # Two failed attempts and we stop asking an open question - the DTMF
+  # ladder below it can get there too, just more slowly.
+  after_max_speech:
+    next: Q003B_PERSONA
+    hi: "Koi baat nahi. Main kuch sawaal poochta hoon."
 
 - id: Q003_ON_BEHALF
   layer: session
@@ -829,6 +883,15 @@ questions:
   # guard against announcing a scheme the caller never asked for.
   on_match: {next: Q100B_CONFIRM_SCHEME}
   on_unknown: {next: Q101_SCHEME_CATEGORY}
+  # We HEARD them clearly and hold no such scheme. Distinct from
+  # on_unclear (we did not hear them) - this is an answer, not a retry.
+  # Saying so plainly is the honest thing and also the fast thing: the old
+  # behaviour retried twice and then dumped them in a category menu
+  # without ever mentioning that the scheme they asked for isn't here.
+  on_not_found:
+    next: Q101_SCHEME_CATEGORY
+    hi: "Maaf kijiye, yeh yojna hamare paas nahi hai. Chaliye, main aapki zarurat ke hisaab se dhoondhta hoon."
+    en: "Sorry, we do not have that scheme. Let me search by what you need instead."
 
 - id: Q100B_CONFIRM_SCHEME
   layer: known_scheme
@@ -858,8 +921,14 @@ questions:
   why: "Fallback when ASR cannot resolve the spoken name. Never guess a scheme; narrow by the real theme menu instead."
   tags: [known_scheme, fallback]
   say_key: q101_scheme_category
-  prompt_hi: "Naam samajh nahi aaya. Kis tarah ki yojna chahiye? Vyapar ke liye 1 dabaiye. Bunkar ke liye 2 dabaiye. Machhli palan ke liye 3 dabaiye. Prashikshan ke liye 4 dabaiye. Kheti ke liye 5 dabaiye. Pension madad ke liye 6 dabaiye."
-  prompt_en: "I didn't catch that. What kind of scheme do you need? For business, press 1. For craft, press 2. For fisheries, press 3. For training, press 4. For farming, press 5. For welfare, press 6."
+  # Opens with the question, NOT with "naam samajh nahi aaya". This
+  # question is now reached in two different ways - we misheard the name,
+  # OR we heard it perfectly and don't have that scheme - and claiming we
+  # misheard directly contradicts the not-found line that was just spoken
+  # ("yeh yojna hamare paas nahi hai. Naam samajh nahi aaya."). Each
+  # caller has already been told which situation they are in.
+  prompt_hi: "Kis tarah ki yojna chahiye? Vyapar ke liye 1 dabaiye. Bunkar ke liye 2 dabaiye. Machhli palan ke liye 3 dabaiye. Prashikshan ke liye 4 dabaiye. Kheti ke liye 5 dabaiye. Pension madad ke liye 6 dabaiye."
+  prompt_en: "What kind of scheme do you need? For business, press 1. For craft, press 2. For fisheries, press 3. For training, press 4. For farming, press 5. For welfare, press 6."
   dtmf:
     "1": {set: {theme: business}, hi: "Vyapar", en: "Business"}
     "2": {set: {theme: craft}, hi: "Bunkar", en: "Craft"}

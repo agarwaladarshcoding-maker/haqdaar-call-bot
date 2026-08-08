@@ -61,24 +61,25 @@ import time
 import httpx
 
 from haqdaar import config
+from haqdaar.present import _first_sentence as _present_first_sentence
 
 TRANSLATE_URL = "https://api.sarvam.ai/translate"
 MODEL = "mayura:v1"
 MAX_INPUT_CHARS = 1000  # mayura:v1's documented limit
 REVIEW_PATH = "benefit_translations_review.tsv"
 
-_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 # Digits with optional separators/decimals: catches 7,000 / 6.25 / 25 / 40.
 _NUMBER_RE = re.compile(r"\d[\d,.]*\d|\d")
 
 
 def first_sentence(text: str) -> str:
-    """Mirrors present.py's _first_sentence - the same span that would
-    otherwise be spoken in English, so the two stay in step."""
-    if not text:
-        return ""
-    parts = _SENTENCE_SPLIT_RE.split(text.strip())
-    return (parts[0] if parts else text.strip())[:MAX_INPUT_CHARS]
+    """Delegates to present.py so the translated span is EXACTLY the span
+    that would otherwise be spoken in English. Importing it rather than
+    copying it is deliberate: this started as a copy, and when present.py
+    learned not to stop at "1." or "Rs." the copy here would have kept
+    translating the fragment - so the Hindi and English paths would have
+    said different things."""
+    return _present_first_sentence(text)[:MAX_INPUT_CHARS] if text else ""
 
 
 def _numbers(text: str) -> list[str]:

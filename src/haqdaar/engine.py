@@ -135,15 +135,42 @@ def _options_text(question: Question, language: str | None, keys: list[str] | No
     return " | ".join(parts)
 
 
+def _narrowing_questions_asked(state: CallState, bank: Bank) -> int:
+    """How many questions we've asked that actually narrow the catalogue.
+
+    Session-layer questions (the intent fork, the open-need question)
+    don't count: they route the call rather than eliminate schemes, and
+    charging them to the caller's question budget would mean only four
+    real questions get asked. Read from each question's own `layer`, so
+    adding a session question later can't silently shrink the budget."""
+    count = 0
+    for qid in state.asked:
+        try:
+            if bank.question(qid).get("layer") != "session":
+                count += 1
+        except KeyError:  # a question that has since left the bank
+            count += 1
+    return count
+
+
 def _stop_reason(state: CallState, bank: Bank) -> str | None:
     """I1/I2/I5: returns why we should stop asking and present, or None."""
     stop_at = bank.meta.get("stop_when_candidates_lte", 5)
     max_q = bank.meta.get("max_questions_per_call", 10)
+    target_q = bank.meta.get("target_questions_per_call", 6)
     n = len(state.candidates)
     if n <= stop_at:
         return "candidates_narrow_enough"
     if len(state.asked) >= max_q:
         return "max_questions_reached"
+    # target_questions_per_call was declared in the bank from the start and
+    # nothing ever read it - only the hard cap of 10 was enforced, so a
+    # call that never narrowed below the threshold asked ten questions.
+    # Nobody stays on a government helpline for ten questions. Present
+    # what we have at the target instead; the candidates are ranked, so
+    # the top few are still the best answers we can give.
+    if _narrowing_questions_asked(state, bank) >= target_q:
+        return "target_questions_reached"
     return None
 
 
@@ -320,8 +347,28 @@ def _handle_dtmf_answer(state: CallState, key: str, question: Question, bank: Ba
     )
     new_state = _recompute_candidates(new_state, db_path)
 
+    # An option may name its own successor. This was already declared in
+    # question_bank.yaml (Q100B_CONFIRM_SCHEME's "2: Nahi" carries
+    # next: Q100_SCHEME_NAME) and was silently ignored - _handle_dtmf_answer
+    # always went to the ranker instead. That made the confirm-back loop
+    # broken in the one direction that matters: a caller saying "no, that's
+    # not my scheme" did NOT get asked for the name again, they got dropped
+    # into whatever the ranker picked next.
+    #
+    # Honouring it also lets the bank declare the call's shape as DATA
+    # rather than needing engine special-cases: the two-scenario fork at
+    # Q002_INTENT is just `next:` on each option. The ranker still chooses
+    # everywhere no explicit successor is declared, which is almost
+    # everywhere.
+    explicit_next = opt.get("next")
+    if explicit_next:
+        return _enter_question(new_state, bank.question(explicit_next), bank, db_path)
+
     reason = _stop_reason(new_state, bank)
-    if reason == "candidates_narrow_enough" or reason == "max_questions_reached":
+    if reason is not None:
+        # Any stop reason means present - listing them individually here
+        # meant a newly added reason (the question target) silently did
+        # nothing, which is how target_questions_per_call sat unread.
         return _enter_presenting(new_state, bank, db_path)
     if not new_state.candidates:
         # I4: zero candidates -> undo the answer we JUST made and ask
@@ -409,9 +456,12 @@ def _handle_speech(state: CallState, event: dict, question: Question, bank: Bank
     is_clear = bool(text) and confidence >= min_conf  # E6: empty string is always unclear
 
     if is_clear:
-        if "SCHEME_NAME" in (question.get("speech_intents") or []):
+        intents = question.get("speech_intents") or []
+        if "SCHEME_NAME" in intents:
             return _handle_known_scheme_speech(state, text, question, bank, db_path)
-        
+        if "OPEN_NEED" in intents:
+            return _handle_open_need_speech(state, text, question, bank, db_path)
+
         # Use LLM to resolve standard speech to a DTMF key
         if state.llm_error_count < 3:
             matched_key = _resolve_speech_to_dtmf(state, text, question)
@@ -431,6 +481,64 @@ def _handle_speech(state: CallState, event: dict, question: Question, bank: Bank
     msg = on_unclear.get("hi", "") if isinstance(on_unclear, dict) else str(on_unclear)
     new_state = replace(state, speech_attempts=new_attempts, last_spoken=msg)
     return new_state, [_say(msg), _gather(question)]
+
+
+def _handle_open_need_speech(
+    state: CallState, text: str, question: Question, bank: Bank, db_path: str | None
+) -> tuple[CallState, list[dict]]:
+    """Q000_OPEN_NEED: the caller has just said what they need in their own
+    words. Turn that into answers, then hand straight back to the normal
+    question loop, which now starts from what they already told us.
+
+    "main kisan hoon" -> {persona: farmer} -> the ranker's own top pick
+    becomes a farming question ("kya aapke paas zameen hai?"), because
+    pick_question already ranks by real information gain over the live
+    candidate set. No new selection logic: the ranker was always able to
+    do this, it just never had a seeded state to work from.
+
+    The extracted attributes are NOT added to `asked`. bank.askable()
+    already skips any question whose `writes` attribute is answered, so
+    they will not be re-asked - and leaving them out of `asked` keeps them
+    from counting against the question budget (they cost no turns) and
+    keeps '#' undoing only things the caller was actually asked."""
+    from haqdaar import understand
+
+    extracted: dict[str, Any] = {}
+    llm_error = False
+    if state.llm_error_count < 3:
+        try:
+            extracted = understand.extract_answers(text, bank)
+        except Exception:  # noqa: BLE001 - never let understanding break a call
+            llm_error = True
+
+    new_answers = {**state.answers, question.raw["writes"]: text}
+    # Never let extraction overwrite something the caller explicitly
+    # pressed a button for - a keypress is a stronger signal than an
+    # inference from a sentence.
+    for attr, value in extracted.items():
+        new_answers.setdefault(attr, value)
+
+    new_state = replace(
+        state,
+        answers=new_answers,
+        asked=state.asked + (question.id,),
+        speech_attempts=0,
+        invalid_count=0,
+        silence_elapsed=0,
+        llm_error_count=state.llm_error_count + (1 if llm_error else 0),
+    )
+    new_state = _recompute_candidates(new_state, db_path)
+
+    if not new_state.candidates:
+        # I4: whatever we inferred contradicts every scheme. Trust the
+        # caller's words less than the catalogue - drop the inferences
+        # (keeping only the fact that we asked) and ask properly.
+        new_state = replace(new_state, answers={**state.answers, question.raw["writes"]: text})
+        new_state = _recompute_candidates(new_state, db_path)
+
+    if _stop_reason(new_state, bank):
+        return _enter_presenting(new_state, bank, db_path)
+    return _enter_question(new_state, _next_question(new_state, bank, db_path), bank, db_path)
 
 
 def _fuzzy_match(spoken: str, candidate_name: str) -> bool:
@@ -464,33 +572,64 @@ def _fuzzy_match(spoken: str, candidate_name: str) -> bool:
 
 
 def _handle_known_scheme_speech(state: CallState, text: str, question: Question, bank: Bank, db_path: str | None) -> tuple[CallState, list[dict]]:
-    best_match = None
-    for c in state.candidates:
-        if _fuzzy_match(text, c.scheme_name) or (c.name_short_hi and _fuzzy_match(text, c.name_short_hi)):
-            best_match = c
-            break
-            
-    if best_match:
+    """The caller named a scheme. Three outcomes, and the middle one is
+    the whole point of this rewrite:
+
+      matched         -> ALWAYS confirm the name back before acting on it
+                         (Q100B). A misheard name must be caught by the
+                         caller, never by whoever is listening to the demo.
+      heard, no match -> say plainly that we do not have that scheme, and
+                         offer to search by need instead.
+      not heard       -> the ordinary unclear-speech ladder, retry.
+
+    Splitting the middle case out is the fix. It used to be folded into
+    "not heard": a name that matched nothing was treated as unclear
+    speech, retried twice, then the caller was silently dropped into a
+    category menu - never once told that the scheme they asked about is
+    not in the catalogue. Telling them is both more honest and shorter.
+
+    Matching itself moved to understand.match_scheme: token shortlist,
+    then an LLM restricted to picking one of those shortlisted schemes or
+    answering NONE. The old _fuzzy_match was a SequenceMatcher ratio over
+    100 English names, which both missed real names and returned
+    confidently wrong ones - and wrong is the expensive direction, because
+    the caller acts on what we read back to them."""
+    from haqdaar import understand
+
+    # We are only called for speech that already passed _handle_speech's
+    # confidence gate, so by construction we HEARD them. An empty
+    # shortlist therefore means "no such scheme in our catalogue", NOT
+    # "say that again" - conflating those two is precisely the bug: a
+    # caller asking for a real scheme we simply don't hold ("Pradhan
+    # Mantri Awas Yojana") got "mujhe samajh nahi aaya" twice and was then
+    # dumped into a category menu, never told we don't have it.
+    match = understand.match_scheme(
+        text, list(state.candidates), llm_enabled=state.llm_error_count < 3
+    )
+
+    if match is not None:
         on_match = _merged(question, bank, "on_match", None)
-        new_answers = dict(state.answers)
-        if question.raw.get("writes"):
-            new_answers[question.raw["writes"]] = best_match.slug
-        new_state = replace(state, answers=new_answers, asked=state.asked + (question.id,))
+        new_answers = {**state.answers, question.raw["writes"]: match.slug}
+        new_state = replace(state, answers=new_answers, asked=state.asked + (question.id,), speech_attempts=0)
         new_state = _recompute_candidates(new_state, db_path)
-        
-        nxt_q = bank.question(on_match["next"])
-        return _enter_question(new_state, nxt_q, bank, db_path)
-        
-    max_attempts = question.get("speech_attempts") or bank.policies["speech_policy"]["max_speech_attempts"]
-    new_attempts = min(state.speech_attempts + 1, max_attempts)
+        return _enter_question(new_state, bank.question(on_match["next"]), bank, db_path)
 
-    if new_attempts >= max_attempts:
-        return _force_fallback(replace(state, speech_attempts=new_attempts), question, bank, db_path)
-
-    on_unclear = _merged(question, bank, "on_unclear", None) or bank.policies["speech_policy"]["on_unclear"]
-    msg = on_unclear.get("hi", "") if isinstance(on_unclear, dict) else str(on_unclear)
-    new_state = replace(state, speech_attempts=new_attempts, last_spoken=msg)
-    return new_state, [_say(msg), _gather(question)]
+    # Heard clearly, matches nothing we hold. Say so plainly and move on.
+    # K6 discipline: never invent a near-miss scheme to have something to
+    # offer - the caller may act on whatever we read back to them.
+    not_found = _merged(question, bank, "on_not_found", None) or {}
+    msg = not_found.get("hi") or (
+        "Maaf kijiye, yeh yojna hamare paas nahi hai. "
+        "Main aapki zarurat ke hisaab se dhoondh sakta hoon."
+    )
+    new_answers = {**state.answers, question.raw["writes"]: "UNKNOWN"}
+    new_state = replace(
+        state, answers=new_answers, asked=state.asked + (question.id,), speech_attempts=0
+    )
+    new_state = _recompute_candidates(new_state, db_path)
+    nxt = bank.question(not_found["next"]) if not_found.get("next") else _next_question(new_state, bank, db_path)
+    next_state, next_actions = _enter_question(new_state, nxt, bank, db_path)
+    return replace(next_state, last_spoken=msg), [_say(msg)] + next_actions
 
 
 def _force_fallback(state: CallState, question: Question, bank: Bank, db_path: str | None) -> tuple[CallState, list[dict]]:

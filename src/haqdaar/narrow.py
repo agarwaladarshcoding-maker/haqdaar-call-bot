@@ -110,6 +110,26 @@ def narrow(answers: dict[str, Any], db_path: str | None = None) -> list[Candidat
             if eliminated:
                 continue
 
+            # Theme: a direct, NULL-safe column match, like state below.
+            #
+            # `theme` is barely present in scheme_rules (9 rules across 100
+            # schemes, versus 52 for applicant_type), so a caller who said
+            # "kheti" went from 100 candidates to 96 - the bank calls
+            # Q004_THEME "the single strongest narrowing question" and it
+            # was doing almost nothing. But schemes.theme IS populated for
+            # every row by scripts/ingest.py (business 52, craft 13,
+            # training 10, welfare 10, fisheries 9, farming 6), and its
+            # values are exactly Q004_THEME's own dtmf `set:` values. The
+            # information was already in the table; nothing was reading it.
+            #
+            # Same shape as state_scope: only eliminates when BOTH sides
+            # are known, so an unanswered theme or an unclassified scheme
+            # never removes anything (narrow.py's unknown-keeps rule).
+            scheme_theme = s["theme"]
+            answer_theme = answered.get("theme")
+            if scheme_theme is not None and answer_theme is not None and scheme_theme != answer_theme:
+                continue
+
             # State: NULL-safe tiebreaker, never a hard scheme_rules row.
             state_scope = s["state_scope"]
             answer_state = answered.get("state")

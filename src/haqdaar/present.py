@@ -50,11 +50,35 @@ class Presentation:
     source: str  # "llm" or "fallback" - for tests/observability only, never spoken
 
 
+_MIN_SPOKEN_CHARS = 40
+_MAX_SPOKEN_CHARS = 320
+
+
 def _first_sentence(text: str) -> str:
+    """The opening sentence, extended until it actually says something.
+
+    A plain split on [.!?] is wrong for this catalogue, and audibly so:
+    the real `benefits` text is full of list markers and abbreviations
+    that end in a period, so six schemes were being announced as their
+    first "sentence" - "1.", "Rs.", "100 kgs.", "Subsidy: 50%." - which
+    is what the caller actually heard read aloud.
+
+    Rather than maintain an abbreviation list (Rs./No./kg./Ltd./Sq. and
+    every numbered-list variant), keep taking sentences until we have
+    something substantial. A fragment is always too short; real prose
+    passes on the first one."""
     if not text:
         return ""
-    parts = _SENTENCE_SPLIT_RE.split(text.strip())
-    return parts[0] if parts else text.strip()
+    parts = [p for p in _SENTENCE_SPLIT_RE.split(text.strip()) if p.strip()]
+    if not parts:
+        return text.strip()
+
+    out = parts[0]
+    for nxt in parts[1:]:
+        if len(out) >= _MIN_SPOKEN_CHARS:
+            break
+        out = f"{out} {nxt}"
+    return out[:_MAX_SPOKEN_CHARS].strip()
 
 
 def _fallback_presentation(candidate: Candidate, benefits_text: str) -> Presentation:
@@ -130,7 +154,19 @@ def present_one(
 ) -> Presentation:
     """Returns a Presentation for one already-matched scheme. Never raises -
     every failure mode (disabled, no key, timeout, malformed, verbatim
-    check failed) falls back to a deterministic, always-safe default."""
+    check failed) falls back to a deterministic, always-safe default.
+
+    A translated Hindi line short-circuits the LLM entirely. The LLM's job
+    here is to pick the most relevant sentence out of a long English
+    `benefits` blob - but if scripts/translate_benefits.py has produced a
+    Hindi line for this scheme, that line is what we want to SAY, and
+    asking the LLM would only produce an English sentence that then wins
+    over it. That was a real bug: the Hindi translations only ever reached
+    the caller when the LLM was switched off or unreachable. Skipping the
+    call is also a turn faster on the results turn, which is the one
+    closest to Twilio's timeout."""
+    if candidate.benefit_one_line_hi:
+        return _fallback_presentation(candidate, benefits_text)
     if not llm_enabled or not config.LLM_API_KEY:
         return _fallback_presentation(candidate, benefits_text)
 
