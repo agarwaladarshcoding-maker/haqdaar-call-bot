@@ -35,6 +35,10 @@ def server(demo_db):
         **os.environ,
         "DB_PATH": demo_db,
         "PYTHONPATH": os.path.join(root, "src") + os.pathsep + os.environ.get("PYTHONPATH", ""),
+        # Subprocess loads its own config.py/.env - monkeypatch in the
+        # parent test process never reaches it. Blank explicitly so this
+        # server never makes a real LLM call regardless of what .env has.
+        "LLM_API_KEY": "",
     }
     proc = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "haqdaar.api:app", "--host", "127.0.0.1", "--port", str(port), "--log-level", "warning"],

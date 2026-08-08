@@ -18,7 +18,7 @@ with only item 1.**
 
 | # | Key | Needed for | Blocks the demo? | Get it from |
 |---|---|---|---|---|
-| 1 | `LLM_API_KEY` | Question selection + speech-to-enum | **No** - engine falls back to rank 1 | Your existing provider |
+| 1 | `LLM_API_KEY` | Question selection, live scheme-wording, and offline eligibility-rule drafting (`scripts/extract_rules.py`) | **No for a live call** - `select.py`/`present.py` fall back to deterministic behavior. **Yes for `extract_rules.py`** - that script only does real work with a key present, but it's a one-time offline batch job, not part of any live call | Your existing provider. `LLM_BASE_URL` only needed for a non-OpenAI OpenAI-compatible endpoint (e.g. Groq) |
 | 2 | `SARVAM_API_KEY` | Hindi TTS and STT | No - text mode works without it | dashboard.sarvam.ai |
 | 3 | `TWILIO_ACCOUNT_SID` | Phone calls | No - not building telephony tonight | console.twilio.com |
 | 4 | `TWILIO_AUTH_TOKEN` | Phone calls | No | console.twilio.com |

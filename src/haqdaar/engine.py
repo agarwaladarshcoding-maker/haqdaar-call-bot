@@ -39,6 +39,7 @@ from typing import Any
 
 from haqdaar.bank import Bank, Question
 from haqdaar.narrow import Candidate, narrow
+from haqdaar.present import present_many
 from haqdaar.select import pick_question
 
 MAIN_MENU_QUESTION_ID = "__MAIN_MENU__"  # sentinel: no question asked yet
@@ -92,10 +93,28 @@ def _end(text: str | None = None) -> list[dict]:
     return out
 
 
-def _prompt_text(question: Question, language: str | None) -> str:
+def _prompt_text(question: Question, language: str | None, answers: dict[str, Any] | None = None, db_path: str | None = None) -> str:
     lang = language or "hi"
     key = "prompt_en" if lang == "en" else "prompt_hi"
-    return question.get(key) or question.get("prompt_hi") or ""
+    text = question.get(key) or question.get("prompt_hi") or ""
+    
+    if "{" in text and answers and "_named_scheme" in answers:
+        slug = answers["_named_scheme"]
+        from haqdaar.db import get_db
+        conn = get_db(db_path)
+        try:
+            row = conn.execute("SELECT name_short_hi, scheme_name, benefit_one_line FROM schemes WHERE slug = ?", (slug,)).fetchone()
+            if row:
+                name = row["name_short_hi"] or row["scheme_name"] or ""
+                benefit = row["benefit_one_line"] or ""
+                if not benefit:
+                    text = text.replace("Isme {benefit_one_line}. ", "")
+                    text = text.replace("It gives {benefit_one_line}. ", "")
+                text = text.format(name_short_hi=name, benefit_one_line=benefit)
+        finally:
+            conn.close()
+            
+    return text
 
 
 def _options_text(question: Question, language: str | None, keys: list[str] | None = None) -> str:
@@ -152,9 +171,11 @@ def _next_question(state: CallState, bank: Bank, db_path: str | None) -> Questio
     return q
 
 
-def _enter_question(state: CallState, question: Question | None, bank: Bank) -> tuple[CallState, list[dict]]:
+def _enter_question(
+    state: CallState, question: Question | None, bank: Bank, db_path: str | None = None
+) -> tuple[CallState, list[dict]]:
     if question is None:
-        return _enter_presenting(state, bank)
+        return _enter_presenting(state, bank, db_path)
     new_state = replace(
         state,
         phase="asking",
@@ -163,27 +184,51 @@ def _enter_question(state: CallState, question: Question | None, bank: Bank) -> 
         speech_attempts=0,
         silence_elapsed=0,
     )
-    text = _prompt_text(question, state.language)
+    text = _prompt_text(question, state.language, state.answers, db_path)
     new_state = replace(new_state, last_spoken=text)
     return new_state, [_say(text), _gather(question)]
 
 
-def _enter_presenting(state: CallState, bank: Bank) -> tuple[CallState, list[dict]]:
+def _enter_presenting(state: CallState, bank: Bank, db_path: str | None = None) -> tuple[CallState, list[dict]]:
     new_state = replace(state, phase="presenting", current_question=None)
     if not new_state.candidates:
+        # K6: no scheme matches - say so honestly, invent nothing.
         text = "Maaf kijiye, koi yojna nahi mili. Mukhya menu ke liye zero dabaiye."
     else:
-        names = ", ".join(c.scheme_name for c in new_state.candidates[:5])
-        text = f"Yeh yojnaayein mil sakti hain: {names}."
+        top = new_state.candidates[:5]
+        presentations = present_many(
+            top, _benefits_text_by_slug(top, db_path), new_state.answers, llm_enabled=state.llm_error_count < 3
+        )
+        lines = "; ".join(f"{p.spoken_name} - {p.benefit_line}" for p in presentations)
+        text = f"Yeh yojnaayein mil sakti hain: {lines}."
     new_state = replace(new_state, last_spoken=text)
     return new_state, [_say(text), {"end": True}]
+
+
+def _benefits_text_by_slug(candidates: tuple[Candidate, ...], db_path: str | None) -> dict[str, str]:
+    """present.py needs each candidate's raw `benefits` column to verify
+    its LLM-selected sentence is a verbatim substring (K2/K3) - narrow.py's
+    Candidate doesn't carry it (it's presentation-layer data, not
+    matching-layer data), so this is a small, separate, read-only lookup."""
+    from haqdaar.db import get_db
+
+    if not candidates:
+        return {}
+    conn = get_db(db_path)
+    try:
+        slugs = [c.slug for c in candidates]
+        placeholders = ",".join("?" for _ in slugs)
+        rows = conn.execute(f"SELECT slug, benefits FROM schemes WHERE slug IN ({placeholders})", slugs).fetchall()
+        return {r["slug"]: r["benefits"] or "" for r in rows}
+    finally:
+        conn.close()
 
 
 def _start_call(bank: Bank, db_path: str | None) -> tuple[CallState, list[dict]]:
     state = CallState()
     state = _recompute_candidates(state, db_path)
     q = bank.question("Q001_LANGUAGE")
-    return _enter_question(state, q, bank)
+    return _enter_question(state, q, bank, db_path)
 
 
 def _global_key(state: CallState, key: str, bank: Bank, db_path: str | None) -> tuple[CallState, list[dict]] | None:
@@ -195,7 +240,7 @@ def _global_key(state: CallState, key: str, bank: Bank, db_path: str | None) -> 
         fresh = CallState(language=state.language)
         fresh = _recompute_candidates(fresh, db_path)
         q = bank.question("Q001_LANGUAGE")
-        return _enter_question(fresh, q, bank)
+        return _enter_question(fresh, q, bank, db_path)
 
     if key == "*":
         # C2/C3: replay last_spoken verbatim, no state change at all beyond
@@ -215,7 +260,7 @@ def _global_key(state: CallState, key: str, bank: Bank, db_path: str | None) -> 
         if not state.asked:
             # C6: at the first question, '#' stays put, does not crash.
             q = bank.question(state.current_question) if state.current_question else bank.question("Q001_LANGUAGE")
-            return _enter_question(state, q, bank)
+            return _enter_question(state, q, bank, db_path)
 
         last_qid = state.asked[-1]
         last_q = bank.question(last_qid)
@@ -232,7 +277,7 @@ def _global_key(state: CallState, key: str, bank: Bank, db_path: str | None) -> 
         undone_state = _recompute_candidates(undone_state, db_path)
         # Re-ask the question that WROTE the attribute we just undid -
         # that's "the previous question" C4 refers to.
-        return _enter_question(undone_state, last_q, bank)
+        return _enter_question(undone_state, last_q, bank, db_path)
 
     return None
 
@@ -271,17 +316,17 @@ def _handle_dtmf_answer(state: CallState, key: str, question: Question, bank: Ba
 
     reason = _stop_reason(new_state, bank)
     if reason == "candidates_narrow_enough" or reason == "max_questions_reached":
-        return _enter_presenting(new_state, bank)
+        return _enter_presenting(new_state, bank, db_path)
     if not new_state.candidates:
         # I4: zero candidates -> undo the answer we JUST made and ask
         # something else, never tell the caller there is nothing for them.
         reverted = replace(state, invalid_count=0, speech_attempts=0)
         reverted = _recompute_candidates(reverted, db_path)
         nxt = _next_question(reverted, bank, db_path)
-        return _enter_question(reverted, nxt, bank)
+        return _enter_question(reverted, nxt, bank, db_path)
 
     nxt = _next_question(new_state, bank, db_path)
-    return _enter_question(new_state, nxt, bank)
+    return _enter_question(new_state, nxt, bank, db_path)
 
 
 def _handle_invalid(state: CallState, question: Question, bank: Bank, db_path: str | None) -> tuple[CallState, list[dict]]:
@@ -313,6 +358,38 @@ def _handle_invalid(state: CallState, question: Question, bank: Bank, db_path: s
     return new_state, [_say(text), _gather(question)]
 
 
+def _resolve_speech_to_dtmf(state: CallState, text: str, question: Question) -> str | None:
+    from haqdaar import llm
+    import json
+
+    dtmf = question.get("dtmf") or {}
+    if not dtmf:
+        return None
+
+    options_text = _options_text(question, state.language)
+    prompt_text = _prompt_text(question, state.language, state.answers)
+
+    system = (
+        "You are a natural language router for a phone tree. "
+        "You will be given the prompt that was played to the user, the available keypad options, "
+        "and the transcribed speech of the user's response.\n"
+        "Your job is to match the user's speech to one of the available keypad options.\n"
+        "Output a JSON object with a single key 'dtmf_key' containing the mapped key as a string (e.g. '1'). "
+        "If the user's speech does not clearly match any of the options, output 'UNCLEAR' as the value."
+    )
+    user = f"Prompt: {prompt_text}\nOptions: {options_text}\nUser Speech: {text}"
+
+    try:
+        resp = llm.chat(system, user, temperature=0.0, json_mode=True)
+        data = json.loads(resp)
+        key = data.get("dtmf_key")
+        if key in dtmf:
+            return key
+    except Exception as e:
+        print(f"LLM Speech Router Error: {e}", flush=True)
+    return None
+
+
 def _handle_speech(state: CallState, event: dict, question: Question, bank: Bank, db_path: str | None) -> tuple[CallState, list[dict]]:
     """E1-E7. Unclear/low-confidence speech ladder."""
     collect = question.get("collect") or {"speech": True}
@@ -326,13 +403,78 @@ def _handle_speech(state: CallState, event: dict, question: Question, bank: Bank
     is_clear = bool(text) and confidence >= min_conf  # E6: empty string is always unclear
 
     if is_clear:
-        # A real speech-understanding path would resolve `text` to a dtmf
-        # key here; that resolver doesn't exist yet (Step 9/10 territory -
-        # this bank has exactly one speech-primary question, handled by
-        # _handle_known_scheme_speech below). Treat as unclear so callers
-        # always have a safe, working path via buttons.
-        pass
+        if "SCHEME_NAME" in (question.get("speech_intents") or []):
+            return _handle_known_scheme_speech(state, text, question, bank, db_path)
+        
+        # Use LLM to resolve standard speech to a DTMF key
+        if state.llm_error_count < 3:
+            matched_key = _resolve_speech_to_dtmf(state, text, question)
+            if matched_key is not None:
+                return _handle_dtmf_answer(state, matched_key, question, bank, db_path)
+            # If it didn't match (UNCLEAR) or LLM failed, we fall through to unclear ladder
+        else:
+            pass # LLM disabled, treat as unclear
 
+    max_attempts = question.get("speech_attempts") or bank.policies["speech_policy"]["max_speech_attempts"]
+    new_attempts = min(state.speech_attempts + 1, max_attempts)
+
+    if new_attempts >= max_attempts:
+        return _force_fallback(replace(state, speech_attempts=new_attempts), question, bank, db_path)
+
+    on_unclear = _merged(question, bank, "on_unclear", None) or bank.policies["speech_policy"]["on_unclear"]
+    msg = on_unclear.get("hi", "") if isinstance(on_unclear, dict) else str(on_unclear)
+    new_state = replace(state, speech_attempts=new_attempts, last_spoken=msg)
+    return new_state, [_say(msg), _gather(question)]
+
+
+def _fuzzy_match(spoken: str, candidate_name: str) -> bool:
+    spoken = spoken.lower().strip()
+    c_name = candidate_name.lower().strip()
+    if not spoken or not c_name:
+        return False
+    if spoken in c_name or c_name in spoken:
+        return True
+    
+    spoken_words = set(spoken.split())
+    c_words = set(c_name.split())
+    
+    stop = {"the", "of", "and", "in", "on", "for", "to", "a", "an", "scheme", "yojana", "yojna"}
+    spoken_words -= stop
+    c_words -= stop
+    
+    if not spoken_words:
+        return False
+        
+    overlap = len(spoken_words & c_words)
+    if overlap >= max(1, len(spoken_words) - 1):
+        return True
+        
+    from difflib import SequenceMatcher
+    ratio = SequenceMatcher(None, spoken, c_name).ratio()
+    if ratio > 0.6:
+        return True
+        
+    return False
+
+
+def _handle_known_scheme_speech(state: CallState, text: str, question: Question, bank: Bank, db_path: str | None) -> tuple[CallState, list[dict]]:
+    best_match = None
+    for c in state.candidates:
+        if _fuzzy_match(text, c.scheme_name) or (c.name_short_hi and _fuzzy_match(text, c.name_short_hi)):
+            best_match = c
+            break
+            
+    if best_match:
+        on_match = _merged(question, bank, "on_match", None)
+        new_answers = dict(state.answers)
+        if question.raw.get("writes"):
+            new_answers[question.raw["writes"]] = best_match.slug
+        new_state = replace(state, answers=new_answers, asked=state.asked + (question.id,))
+        new_state = _recompute_candidates(new_state, db_path)
+        
+        nxt_q = bank.question(on_match["next"])
+        return _enter_question(new_state, nxt_q, bank, db_path)
+        
     max_attempts = question.get("speech_attempts") or bank.policies["speech_policy"]["max_speech_attempts"]
     new_attempts = min(state.speech_attempts + 1, max_attempts)
 
@@ -367,7 +509,7 @@ def _force_fallback(state: CallState, question: Question, bank: Bank, db_path: s
         new_state = replace(new_state, answers=new_answers, asked=new_state.asked + (question.id,))
         new_state = _recompute_candidates(new_state, db_path)
         nxt_q = bank.question(after["next"])
-        return _enter_question(new_state, nxt_q, bank)
+        return _enter_question(new_state, nxt_q, bank, db_path)
 
     if question.get("dtmf"):
         # E3/E4: force DTMF-only from here on for this question.
@@ -376,7 +518,7 @@ def _force_fallback(state: CallState, question: Question, bank: Bank, db_path: s
     # No dtmf AND no after_max_speech.next: nothing left to ask here at
     # all - fall through to presenting whatever candidates already exist
     # rather than spin. This is the last-resort I6 backstop.
-    return _enter_presenting(new_state, bank)
+    return _enter_presenting(new_state, bank, db_path)
 
 
 def _handle_silence(state: CallState, elapsed: int, question: Question | None, bank: Bank, db_path: str | None) -> tuple[CallState, list[dict]]:
@@ -402,7 +544,7 @@ def _handle_silence(state: CallState, elapsed: int, question: Question | None, b
             )
             new_state = _recompute_candidates(new_state, db_path)
             nxt = _next_question(new_state, bank, db_path)
-            return _enter_question(new_state, nxt, bank)
+            return _enter_question(new_state, nxt, bank, db_path)
         # F4: polite close, never a silent hangup.
         msg = next((r["hi"] for r in ladder if r["at"] == 30), "Dhanyavaad. Phir call kijiye.")
         return replace(state, phase="ended", silence_elapsed=total), _end(msg)
@@ -458,7 +600,7 @@ def step(state: CallState, event: dict, bank: Bank, db_path: str | None = None) 
 
     question = bank.question(state.current_question) if state.current_question else None
     if question is None:
-        return _enter_presenting(state, bank)
+        return _enter_presenting(state, bank, db_path)
 
     dtmf = event.get("dtmf")
     if dtmf is not None:

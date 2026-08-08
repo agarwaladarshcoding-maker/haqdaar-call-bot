@@ -25,6 +25,15 @@ from haqdaar.engine import CallState, step
 
 app = FastAPI(title="Haqdaar Voice API")
 
+# Step 11: Twilio becomes a second client of the same engine, mounted as
+# its own router rather than folded into the endpoints above - it has its
+# own session store (keyed by Twilio CallSid, not our call_id) and its own
+# request/response shapes (form-encoded webhooks, TwiML), so sharing a
+# router would blur two different transport contracts for no benefit.
+from haqdaar.twilio_adapter import router as twilio_router  # noqa: E402
+
+app.include_router(twilio_router)
+
 # L5: two calls at once must never mix sessions - a single process-wide
 # lock around dict access is enough here (in-memory dict, not a DB), since
 # FastAPI's default sync-endpoint threadpool can run requests concurrently.
