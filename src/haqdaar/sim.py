@@ -152,7 +152,14 @@ def run_call(
                 except EOFError:
                     break
 
-            if key == "!silence":
+            if key.startswith("!silence:"):
+                # An explicit number of seconds. The engine's silence
+                # ladder is graded (nudge, then offer the buttons, then
+                # ask if anyone is there, then end), so a demo or a test
+                # that can only ever send 30 can only ever show the last
+                # rung - and the interesting behaviour is the middle.
+                event = {"timeout": int(key.split(":", 1)[1])}
+            elif key == "!silence":
                 event = {"timeout": 30}
             elif key == "!hangup":
                 event = {"hangup": True}
