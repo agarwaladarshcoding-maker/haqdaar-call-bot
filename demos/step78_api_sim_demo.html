@@ -1,0 +1,365 @@
+<title>Step 7+8 — HTTP API + Terminal Simulator</title>
+<style>
+@font-face {
+  font-family: 'JBM';
+  src: local('JetBrains Mono');
+}
+:root {
+  --paper: #F7F4EC; --paper-raised: #FDFBF6; --ink: #2B2620; --ink-dim: #6B6355; --ink-faint: #A79E8C;
+  --rule: #DED5C2; --rule-strong: #C9BD9F; --accent: #A8461F; --accent-dim: #C97B57; --accent-wash: #F1E0D3;
+  --kept: #5C7048; --kept-wash: #E7ECDE; --dropped: #9B4A3A; --dropped-wash: #F3E2DC;
+  --global-key: #4A5A7A; --global-key-wash: #E4E8EF; --key-face: #FDFBF6; --key-shadow: #C9BD9F; --focus: #A8461F;
+  --warn: #9B6B2A; --warn-wash: #F1E4CC;
+  --get: #4A5A7A; --get-wash: #E4E8EF; --post: #5C7048; --post-wash: #E7ECDE; --del: #9B4A3A; --del-wash: #F3E2DC;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #1A1712; --paper-raised: #23201A; --ink: #EDE6D6; --ink-dim: #A79A82; --ink-faint: #6E6555;
+    --rule: #3A3428; --rule-strong: #4C4433; --accent: #E0824F; --accent-dim: #B5623A; --accent-wash: #33251C;
+    --kept: #9DB584; --kept-wash: #263021; --dropped: #D08975; --dropped-wash: #34211C;
+    --global-key: #8FA3CC; --global-key-wash: #232A38; --key-face: #23201A; --key-shadow: #100E0A; --focus: #E0824F;
+    --warn: #D9A759; --warn-wash: #332818;
+    --get: #8FA3CC; --get-wash: #232A38; --post: #9DB584; --post-wash: #263021; --del: #D08975; --del-wash: #34211C;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #1A1712; --paper-raised: #23201A; --ink: #EDE6D6; --ink-dim: #A79A82; --ink-faint: #6E6555;
+  --rule: #3A3428; --rule-strong: #4C4433; --accent: #E0824F; --accent-dim: #B5623A; --accent-wash: #33251C;
+  --kept: #9DB584; --kept-wash: #263021; --dropped: #D08975; --dropped-wash: #34211C;
+  --global-key: #8FA3CC; --global-key-wash: #232A38; --key-face: #23201A; --key-shadow: #100E0A; --focus: #E0824F;
+  --warn: #D9A759; --warn-wash: #332818;
+  --get: #8FA3CC; --get-wash: #232A38; --post: #9DB584; --post-wash: #263021; --del: #D08975; --del-wash: #34211C;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--paper); color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  margin: 0; padding: 0 0 4rem;
+  -webkit-font-smoothing: antialiased;
+}
+code, .mono { font-family: 'JBM', ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
+
+header {
+  padding: 2rem 2rem 1.25rem; border-bottom: 1px solid var(--rule);
+  background: var(--paper-raised);
+}
+header h1 { margin: 0 0 0.35rem; font-size: 1.4rem; letter-spacing: -0.01em; }
+header p { margin: 0; color: var(--ink-dim); font-size: 0.92rem; max-width: 72ch; line-height: 1.5; }
+header .badges { margin-top: 0.85rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.badge {
+  font-family: 'JBM', monospace; font-size: 0.72rem; padding: 0.22rem 0.55rem;
+  border-radius: 4px; border: 1px solid var(--rule-strong); color: var(--ink-dim);
+  background: var(--paper);
+}
+.badge.ok { color: var(--kept); border-color: var(--kept); background: var(--kept-wash); }
+
+.tabs {
+  display: flex; gap: 0.25rem; padding: 0.75rem 2rem 0; background: var(--paper-raised);
+  border-bottom: 1px solid var(--rule); overflow-x: auto;
+}
+.tab {
+  font-family: 'JBM', monospace; font-size: 0.82rem; padding: 0.6rem 1rem;
+  background: transparent; border: none; border-bottom: 2px solid transparent;
+  color: var(--ink-dim); cursor: pointer; white-space: nowrap;
+}
+.tab:hover { color: var(--ink); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.tab:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+main { max-width: 1180px; margin: 0 auto; padding: 1.75rem 2rem 0; }
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* ---- Scenarios tab ---- */
+.scenario-layout { display: grid; grid-template-columns: 260px 1fr; gap: 1.5rem; align-items: start; }
+.scenario-list { display: flex; flex-direction: column; gap: 0.4rem; position: sticky; top: 1rem; }
+.scenario-btn {
+  text-align: left; background: var(--paper-raised); border: 1px solid var(--rule);
+  border-radius: 8px; padding: 0.7rem 0.85rem; cursor: pointer; color: var(--ink);
+}
+.scenario-btn .id { font-family: 'JBM', monospace; font-size: 0.72rem; color: var(--accent); font-weight: 700; }
+.scenario-btn .label { display: block; font-size: 0.85rem; margin-top: 0.15rem; color: var(--ink-dim); line-height: 1.35; }
+.scenario-btn:hover { border-color: var(--rule-strong); }
+.scenario-btn.active { border-color: var(--accent); background: var(--accent-wash); }
+.scenario-btn.active .label { color: var(--ink); }
+.scenario-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.turns { display: flex; flex-direction: column; gap: 0.9rem; }
+.turn {
+  border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; background: var(--paper-raised);
+}
+.turn-req {
+  display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.9rem;
+  border-bottom: 1px solid var(--rule); font-family: 'JBM', monospace; font-size: 0.78rem;
+}
+.method { font-weight: 700; padding: 0.1rem 0.4rem; border-radius: 4px; }
+.method.POST { background: var(--post-wash); color: var(--post); }
+.method.GET { background: var(--get-wash); color: var(--get); }
+.method.DELETE { background: var(--del-wash); color: var(--del); }
+.turn-req .path { color: var(--ink); }
+.turn-req .body-preview { color: var(--ink-faint); margin-left: auto; }
+.turn-status {
+  font-size: 0.72rem; padding: 0.08rem 0.4rem; border-radius: 4px;
+  background: var(--kept-wash); color: var(--kept); font-weight: 700;
+}
+.turn-body { padding: 0.85rem 0.9rem; display: grid; gap: 0.7rem; }
+.says { display: flex; flex-direction: column; gap: 0.4rem; }
+.say-line {
+  background: var(--accent-wash); border-left: 3px solid var(--accent);
+  padding: 0.5rem 0.7rem; border-radius: 0 6px 6px 0; font-size: 0.88rem; line-height: 1.45;
+}
+.gather-line {
+  font-family: 'JBM', monospace; font-size: 0.74rem; color: var(--ink-faint);
+  padding: 0.2rem 0.7rem;
+}
+.state-strip {
+  display: flex; gap: 1rem; flex-wrap: wrap; font-family: 'JBM', monospace; font-size: 0.72rem;
+  color: var(--ink-dim); border-top: 1px dashed var(--rule); padding-top: 0.6rem;
+}
+.state-strip b { color: var(--ink); }
+.candidates-bar-wrap { display: flex; align-items: center; gap: 0.5rem; }
+.candidates-bar { height: 6px; border-radius: 3px; background: var(--rule); flex: 1; max-width: 140px; overflow: hidden; }
+.candidates-bar-fill { height: 100%; background: var(--accent); border-radius: 3px; }
+.phase-pill { padding: 0.05rem 0.4rem; border-radius: 4px; }
+.phase-pill.asking { background: var(--get-wash); color: var(--get); }
+.phase-pill.presenting { background: var(--warn-wash); color: var(--warn); }
+.phase-pill.ended { background: var(--dropped-wash); color: var(--dropped); }
+
+/* ---- Concurrency tab ---- */
+.concurrency-explainer { max-width: 68ch; color: var(--ink-dim); font-size: 0.92rem; line-height: 1.6; margin-bottom: 1.5rem; }
+.concurrency-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+.call-card {
+  border: 1px solid var(--rule); border-radius: 10px; padding: 1.1rem; background: var(--paper-raised);
+}
+.call-card h3 { margin: 0 0 0.75rem; font-size: 0.9rem; font-family: 'JBM', monospace; }
+.call-card .cid { color: var(--ink-faint); font-size: 0.75rem; }
+.call-card .answer { margin-top: 0.75rem; font-size: 1.05rem; }
+.call-card .answer b { color: var(--accent); }
+
+/* ---- Dial codes tab ---- */
+.dial-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
+.dial-card { border: 1px solid var(--rule); border-radius: 10px; padding: 1rem; background: var(--paper-raised); }
+.dial-card .code { font-family: 'JBM', monospace; font-size: 1.3rem; font-weight: 700; color: var(--accent); }
+.dial-card .spoken { font-family: 'JBM', monospace; font-size: 0.78rem; color: var(--ink-faint); margin: 0.2rem 0 0.7rem; }
+.dial-card .text { font-size: 0.88rem; line-height: 1.5; }
+.dial-card.invalid { opacity: 0.75; }
+.dial-card.invalid .text { color: var(--dropped); font-style: italic; }
+
+/* ---- Health tab ---- */
+.health-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; max-width: 760px; }
+.health-card { border: 1px solid var(--rule); border-radius: 10px; padding: 1rem; background: var(--paper-raised); }
+.health-card .k { font-size: 0.72rem; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.04em; }
+.health-card .v { font-family: 'JBM', monospace; font-size: 1.1rem; margin-top: 0.25rem; }
+.health-card .v.ok { color: var(--kept); }
+
+.cmd-block {
+  font-family: 'JBM', monospace; font-size: 0.82rem; background: var(--ink); color: var(--paper);
+  padding: 0.9rem 1.1rem; border-radius: 8px; margin: 1rem 0; overflow-x: auto; line-height: 1.6;
+}
+:root[data-theme="dark"] .cmd-block, @media (prefers-color-scheme: dark) { }
+.cmd-block .prompt { color: var(--accent-dim); }
+
+section.explain { max-width: 74ch; margin-bottom: 1.5rem; color: var(--ink-dim); font-size: 0.92rem; line-height: 1.6; }
+section.explain code { background: var(--paper-raised); padding: 0.1rem 0.35rem; border-radius: 4px; border: 1px solid var(--rule); }
+
+@media (max-width: 760px) {
+  .scenario-layout { grid-template-columns: 1fr; }
+  .scenario-list { position: static; flex-direction: row; overflow-x: auto; }
+  .concurrency-grid { grid-template-columns: 1fr; }
+}
+</style>
+
+<header>
+  <h1>Step 7 + 8 — HTTP API and terminal simulator</h1>
+  <p>Every request/response pair below is a real HTTP call captured from a running <code>uvicorn</code> server hitting the actual <code>api.py</code> → <code>engine.step()</code> path — nothing hand-written. This is what a Twilio adapter (or the CLI simulator) actually sends and receives.</p>
+  <div class="badges" id="badges"></div>
+</header>
+
+<div class="tabs">
+  <button class="tab active" data-panel="scenarios">Call scenarios</button>
+  <button class="tab" data-panel="concurrency">Concurrency proof (L5)</button>
+  <button class="tab" data-panel="dial">Direct dial (M10)</button>
+  <button class="tab" data-panel="health">Health + run it yourself</button>
+</div>
+
+<main>
+  <div class="panel active" id="panel-scenarios">
+    <section class="explain">Pick a scenario on the left. Each turn shows the exact HTTP request sent and the exact JSON response that came back — <code>say</code> actions (what the IVR speaks), <code>gather</code> (what it's waiting for), and the state snapshot (phase, candidate count, answers so far).</section>
+    <div class="scenario-layout">
+      <div class="scenario-list" id="scenario-list"></div>
+      <div class="turns" id="turns"></div>
+    </div>
+  </div>
+
+  <div class="panel" id="panel-concurrency">
+    <div class="concurrency-explainer">Two calls started at the same instant, on two different threads, each answering the language question differently. If sessions ever crossed wires, one call would show the other's answer. <code>api.py</code> guards <code>_sessions</code> with a lock and keys every call by a fresh UUID — here's what came back for real.</div>
+    <div class="concurrency-grid" id="concurrency-grid"></div>
+  </div>
+
+  <div class="panel" id="panel-dial">
+    <section class="explain">A caller who already has a code (from a leaflet, or read out at the end of a previous call) can skip the questions entirely. <code>011</code> = scheme 01, section 1. <code>054</code> hits an unverified scheme — notice the deadline sentence is already gone. <code>999</code> doesn't exist.</section>
+    <div class="dial-grid" id="dial-grid"></div>
+  </div>
+
+  <div class="panel" id="panel-health">
+    <section class="explain">This is what <code>GET /health</code> returned from the same server — what a Twilio adapter or monitor would check before routing a real call to this instance.</section>
+    <div class="health-grid" id="health-grid"></div>
+
+    <section class="explain" style="margin-top: 2rem;">To run this yourself in a terminal, with <code>.env</code> absent (no API keys at all):</section>
+    <div class="cmd-block"><span class="prompt">$</span> python -m haqdaar.sim --script 1,2,1,1,1 --trace</div>
+    <section class="explain"><code>--trace</code> prints the candidate count after every turn — watching it drop is the whole point. <code>--script</code> replays a fixed key sequence; drop it for an interactive call you type into by hand. <code>--dial 011</code> jumps straight to a section, same as the Dial tab above.</section>
+  </div>
+</main>
+
+<script>
+const DATA = {"base_url": "http://127.0.0.1:8791", "scenarios": {"m1_happy_path": {"label": "M1 - Happy path (business owner, valid presses)", "script": ["1", "2", "1", "1", "1"], "turns": [{"request": {"method": "POST", "path": "/call/start", "body": null}, "response": {"status": 200, "actions": [{"say": "Namaste. Hindi ke liye 1 dabaiye. For English, press 2. Hindi aur English dono ke liye 3 dabaiye."}, {"gather": {"digits": 1, "speech": false}}], "state": {"phase": "asking", "language": null, "answers": {}, "asked": [], "current_question": "Q001_LANGUAGE", "last_spoken": "Namaste. Hindi ke liye 1 dabaiye. For English, press 2. Hindi aur English dono ke liye 3 dabaiye.", "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "1"}}}, "response": {"status": 200, "actions": [{"say": "Kisi yojna ka naam pata hai to 1. Apne liye yojna dhoondhni hai to 2. Kisi kaam ke liye madad chahiye to 3."}, {"gather": {"digits": 1, "speech": true}}], "state": {"phase": "asking", "language": "hi", "answers": {"language": "hi"}, "asked": ["Q001_LANGUAGE"], "current_question": "Q002_INTENT", "last_spoken": "Kisi yojna ka naam pata hai to 1. Apne liye yojna dhoondhni hai to 2. Kisi kaam ke liye madad chahiye to 3.", "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "2"}}}, "response": {"status": 200, "actions": [{"say": "Aap kya karte hain? Vyapar ya dukaan 1. Bunkar ya karigar 2. Machhli palan 3. Kisan 4. Naukri ya kuch aur 5."}, {"gather": {"digits": 1, "speech": true}}], "state": {"phase": "asking", "language": "hi", "answers": {"language": "hi", "intent": "find_for_me"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT"], "current_question": "Q003B_PERSONA", "last_spoken": "Aap kya karte hain? Vyapar ya dukaan 1. Bunkar ya karigar 2. Machhli palan 3. Kisan 4. Naukri ya kuch aur 5.", "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "1"}}}, "response": {"status": 200, "actions": [{"say": "Yeh yojnaayein mil sakti hain: Demo Scheme 1 for Business Support, Demo Scheme 13 for Business Support, Demo Scheme 19 for Business Support, Demo Scheme 7 for Business Support."}, {"end": true}], "state": {"phase": "presenting", "language": "hi", "answers": {"language": "hi", "intent": "find_for_me", "persona": "business"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "current_question": null, "last_spoken": "Yeh yojnaayein mil sakti hain: Demo Scheme 1 for Business Support, Demo Scheme 13 for Business Support, Demo Scheme 19 for Business Support, Demo Scheme 7 for Business Support.", "candidate_count": 4, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 13 for Business Support", "Demo Scheme 19 for Business Support", "Demo Scheme 7 for Business Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "1"}}}, "response": {"status": 200, "actions": [{"end": true}], "state": {"phase": "ended", "language": "hi", "answers": {"language": "hi", "intent": "find_for_me", "persona": "business"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "current_question": null, "last_spoken": "Yeh yojnaayein mil sakti hain: Demo Scheme 1 for Business Support, Demo Scheme 13 for Business Support, Demo Scheme 19 for Business Support, Demo Scheme 7 for Business Support.", "candidate_count": 4, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 13 for Business Support", "Demo Scheme 19 for Business Support", "Demo Scheme 7 for Business Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}]}, "m2_hash_recovery": {"label": "M2 - Press # twice mid-call, candidates recover", "script": ["1", "2", "1", "#", "#", "2", "1", "1"], "turns": [{"request": {"method": "POST", "path": "/call/start", "body": null}, "response": {"status": 200, "actions": [{"say": "Namaste. Hindi ke liye 1 dabaiye. For English, press 2. Hindi aur English dono ke liye 3 dabaiye."}, {"gather": {"digits": 1, "speech": false}}], "state": {"phase": "asking", "language": null, "answers": {}, "asked": [], "current_question": "Q001_LANGUAGE", "last_spoken": "Namaste. Hindi ke liye 1 dabaiye. For English, press 2. Hindi aur English dono ke liye 3 dabaiye.", "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "1"}}}, "response": {"status": 200, "actions": [{"say": "Kisi yojna ka naam pata hai to 1. Apne liye yojna dhoondhni hai to 2. Kisi kaam ke liye madad chahiye to 3."}, {"gather": {"digits": 1, "speech": true}}], "state": {"phase": "asking", "language": "hi", "answers": {"language": "hi"}, "asked": ["Q001_LANGUAGE"], "current_question": "Q002_INTENT", "last_spoken": "Kisi yojna ka naam pata hai to 1. Apne liye yojna dhoondhni hai to 2. Kisi kaam ke liye madad chahiye to 3.", "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "2"}}}, "response": {"status": 200, "actions": [{"say": "Aap kya karte hain? Vyapar ya dukaan 1. Bunkar ya karigar 2. Machhli palan 3. Kisan 4. Naukri ya kuch aur 5."}, {"gather": {"digits": 1, "speech": true}}], "state": {"phase": "asking", "language": "hi", "answers": {"language": "hi", "intent": "find_for_me"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT"], "current_question": "Q003B_PERSONA", "last_spoken": "Aap kya karte hain? Vyapar ya dukaan 1. Bunkar ya karigar 2. Machhli palan 3. Kisan 4. Naukri ya kuch aur 5.", "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "1"}}}, "response": {"status": 200, "actions": [{"say": "Yeh yojnaayein mil sakti hain: Demo Scheme 1 for Business Support, Demo Scheme 13 for Business Support, Demo Scheme 19 for Business Support, Demo Scheme 7 for Business Support."}, {"end": true}], "state": {"phase": "presenting", "language": "hi", "answers": {"language": "hi", "intent": "find_for_me", "persona": "business"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "current_question": null, "last_spoken": "Yeh yojnaayein mil sakti hain: Demo Scheme 1 for Business Support, Demo Scheme 13 for Business Support, Demo Scheme 19 for Business Support, Demo Scheme 7 for Business Support.", "candidate_count": 4, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 13 for Business Support", "Demo Scheme 19 for Business Support", "Demo Scheme 7 for Business Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "#"}}}, "response": {"status": 200, "actions": [{"say": "Aap kya karte hain? Vyapar ya dukaan 1. Bunkar ya karigar 2. Machhli palan 3. Kisan 4. Naukri ya kuch aur 5."}, {"gather": {"digits": 1, "speech": true}}], "state": {"phase": "asking", "language": "hi", "answers": {"language": "hi", "intent": "find_for_me"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT"], "current_question": "Q003B_PERSONA", "last_spoken": "Aap kya karte hain? Vyapar ya dukaan 1. Bunkar ya karigar 2. Machhli palan 3. Kisan 4. Naukri ya kuch aur 5.", "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "#"}}}, "response": {"status": 200, "actions": [{"say": "Kisi yojna ka naam pata hai to 1. Apne liye yojna dhoondhni hai to 2. Kisi kaam ke liye madad chahiye to 3."}, {"gather": {"digits": 1, "speech": true}}], "state": {"phase": "asking", "language": "hi", "answers": {"language": "hi"}, "asked": ["Q001_LANGUAGE"], "current_question": "Q002_INTENT", "last_spoken": "Kisi yojna ka naam pata hai to 1. Apne liye yojna dhoondhni hai to 2. Kisi kaam ke liye madad chahiye to 3.", "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "2"}}}, "response": {"status": 200, "actions": [{"say": "Aap kya karte hain? Vyapar ya dukaan 1. Bunkar ya karigar 2. Machhli palan 3. Kisan 4. Naukri ya kuch aur 5."}, {"gather": {"digits": 1, "speech": true}}], "state": {"phase": "asking", "language": "hi", "answers": {"language": "hi", "intent": "find_for_me"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT"], "current_question": "Q003B_PERSONA", "last_spoken": "Aap kya karte hain? Vyapar ya dukaan 1. Bunkar ya karigar 2. Machhli palan 3. Kisan 4. Naukri ya kuch aur 5.", "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "1"}}}, "response": {"status": 200, "actions": [{"say": "Yeh yojnaayein mil sakti hain: Demo Scheme 1 for Business Support, Demo Scheme 13 for Business Support, Demo Scheme 19 for Business Support, Demo Scheme 7 for Business Support."}, {"end": true}], "state": {"phase": "presenting", "language": "hi", "answers": {"language": "hi", "intent": "find_for_me", "persona": "business"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "current_question": null, "last_spoken": "Yeh yojnaayein mil sakti hain: Demo Scheme 1 for Business Support, Demo Scheme 13 for Business Support, Demo Scheme 19 for Business Support, Demo Scheme 7 for Business Support.", "candidate_count": 4, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 13 for Business Support", "Demo Scheme 19 for Business Support", "Demo Scheme 7 for Business Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "1"}}}, "response": {"status": 200, "actions": [{"end": true}], "state": {"phase": "ended", "language": "hi", "answers": {"language": "hi", "intent": "find_for_me", "persona": "business"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "current_question": null, "last_spoken": "Yeh yojnaayein mil sakti hain: Demo Scheme 1 for Business Support, Demo Scheme 13 for Business Support, Demo Scheme 19 for Business Support, Demo Scheme 7 for Business Support.", "candidate_count": 4, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 13 for Business Support", "Demo Scheme 19 for Business Support", "Demo Scheme 7 for Business Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}]}, "m3_zero_restart": {"label": "M3 - Press 0 mid-call, full restart", "script": ["1", "2", "1", "0", "1", "2", "1", "1"], "turns": [{"request": {"method": "POST", "path": "/call/start", "body": null}, "response": {"status": 200, "actions": [{"say": "Namaste. Hindi ke liye 1 dabaiye. For English, press 2. Hindi aur English dono ke liye 3 dabaiye."}, {"gather": {"digits": 1, "speech": false}}], "state": {"phase": "asking", "language": null, "answers": {}, "asked": [], "current_question": "Q001_LANGUAGE", "last_spoken": "Namaste. Hindi ke liye 1 dabaiye. For English, press 2. Hindi aur English dono ke liye 3 dabaiye.", "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "1"}}}, "response": {"status": 200, "actions": [{"say": "Kisi yojna ka naam pata hai to 1. Apne liye yojna dhoondhni hai to 2. Kisi kaam ke liye madad chahiye to 3."}, {"gather": {"digits": 1, "speech": true}}], "state": {"phase": "asking", "language": "hi", "answers": {"language": "hi"}, "asked": ["Q001_LANGUAGE"], "current_question": "Q002_INTENT", "last_spoken": "Kisi yojna ka naam pata hai to 1. Apne liye yojna dhoondhni hai to 2. Kisi kaam ke liye madad chahiye to 3.", "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "2"}}}, "response": {"status": 200, "actions": [{"say": "Aap kya karte hain? Vyapar ya dukaan 1. Bunkar ya karigar 2. Machhli palan 3. Kisan 4. Naukri ya kuch aur 5."}, {"gather": {"digits": 1, "speech": true}}], "state": {"phase": "asking", "language": "hi", "answers": {"language": "hi", "intent": "find_for_me"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT"], "current_question": "Q003B_PERSONA", "last_spoken": "Aap kya karte hain? Vyapar ya dukaan 1. Bunkar ya karigar 2. Machhli palan 3. Kisan 4. Naukri ya kuch aur 5.", "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "1"}}}, "response": {"status": 200, "actions": [{"say": "Yeh yojnaayein mil sakti hain: Demo Scheme 1 for Business Support, Demo Scheme 13 for Business Support, Demo Scheme 19 for Business Support, Demo Scheme 7 for Business Support."}, {"end": true}], "state": {"phase": "presenting", "language": "hi", "answers": {"language": "hi", "intent": "find_for_me", "persona": "business"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "current_question": null, "last_spoken": "Yeh yojnaayein mil sakti hain: Demo Scheme 1 for Business Support, Demo Scheme 13 for Business Support, Demo Scheme 19 for Business Support, Demo Scheme 7 for Business Support.", "candidate_count": 4, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 13 for Business Support", "Demo Scheme 19 for Business Support", "Demo Scheme 7 for Business Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "0"}}}, "response": {"status": 200, "actions": [{"say": "Namaste. Hindi ke liye 1 dabaiye. For English, press 2. Hindi aur English dono ke liye 3 dabaiye."}, {"gather": {"digits": 1, "speech": false}}], "state": {"phase": "asking", "language": "hi", "answers": {}, "asked": [], "current_question": "Q001_LANGUAGE", "last_spoken": "Namaste. Hindi ke liye 1 dabaiye. For English, press 2. Hindi aur English dono ke liye 3 dabaiye.", "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "1"}}}, "response": {"status": 200, "actions": [{"say": "Kisi yojna ka naam pata hai to 1. Apne liye yojna dhoondhni hai to 2. Kisi kaam ke liye madad chahiye to 3."}, {"gather": {"digits": 1, "speech": true}}], "state": {"phase": "asking", "language": "hi", "answers": {"language": "hi"}, "asked": ["Q001_LANGUAGE"], "current_question": "Q002_INTENT", "last_spoken": "Kisi yojna ka naam pata hai to 1. Apne liye yojna dhoondhni hai to 2. Kisi kaam ke liye madad chahiye to 3.", "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "2"}}}, "response": {"status": 200, "actions": [{"say": "Aap kya karte hain? Vyapar ya dukaan 1. Bunkar ya karigar 2. Machhli palan 3. Kisan 4. Naukri ya kuch aur 5."}, {"gather": {"digits": 1, "speech": true}}], "state": {"phase": "asking", "language": "hi", "answers": {"language": "hi", "intent": "find_for_me"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT"], "current_question": "Q003B_PERSONA", "last_spoken": "Aap kya karte hain? Vyapar ya dukaan 1. Bunkar ya karigar 2. Machhli palan 3. Kisan 4. Naukri ya kuch aur 5.", "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "1"}}}, "response": {"status": 200, "actions": [{"say": "Yeh yojnaayein mil sakti hain: Demo Scheme 1 for Business Support, Demo Scheme 13 for Business Support, Demo Scheme 19 for Business Support, Demo Scheme 7 for Business Support."}, {"end": true}], "state": {"phase": "presenting", "language": "hi", "answers": {"language": "hi", "intent": "find_for_me", "persona": "business"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "current_question": null, "last_spoken": "Yeh yojnaayein mil sakti hain: Demo Scheme 1 for Business Support, Demo Scheme 13 for Business Support, Demo Scheme 19 for Business Support, Demo Scheme 7 for Business Support.", "candidate_count": 4, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 13 for Business Support", "Demo Scheme 19 for Business Support", "Demo Scheme 7 for Business Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "1"}}}, "response": {"status": 200, "actions": [{"end": true}], "state": {"phase": "ended", "language": "hi", "answers": {"language": "hi", "intent": "find_for_me", "persona": "business"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "current_question": null, "last_spoken": "Yeh yojnaayein mil sakti hain: Demo Scheme 1 for Business Support, Demo Scheme 13 for Business Support, Demo Scheme 19 for Business Support, Demo Scheme 7 for Business Support.", "candidate_count": 4, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 13 for Business Support", "Demo Scheme 19 for Business Support", "Demo Scheme 7 for Business Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}]}, "m6_wrong_buttons": {"label": "M6 - Wrong button every time, still completes", "script": ["1", "8", "8", "8", "2", "9", "9", "9", "1", "1"], "turns": [{"request": {"method": "POST", "path": "/call/start", "body": null}, "response": {"status": 200, "actions": [{"say": "Namaste. Hindi ke liye 1 dabaiye. For English, press 2. Hindi aur English dono ke liye 3 dabaiye."}, {"gather": {"digits": 1, "speech": false}}], "state": {"phase": "asking", "language": null, "answers": {}, "asked": [], "current_question": "Q001_LANGUAGE", "last_spoken": "Namaste. Hindi ke liye 1 dabaiye. For English, press 2. Hindi aur English dono ke liye 3 dabaiye.", "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "1"}}}, "response": {"status": 200, "actions": [{"say": "Kisi yojna ka naam pata hai to 1. Apne liye yojna dhoondhni hai to 2. Kisi kaam ke liye madad chahiye to 3."}, {"gather": {"digits": 1, "speech": true}}], "state": {"phase": "asking", "language": "hi", "answers": {"language": "hi"}, "asked": ["Q001_LANGUAGE"], "current_question": "Q002_INTENT", "last_spoken": "Kisi yojna ka naam pata hai to 1. Apne liye yojna dhoondhni hai to 2. Kisi kaam ke liye madad chahiye to 3.", "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "8"}}}, "response": {"status": 200, "actions": [{"say": "Yeh button sahi nahi hai. 1: Naam pata hai | 2: Meri yojna dhoondho | 3: Kaam ke hisaab se"}, {"gather": {"digits": 1, "speech": true}}], "state": {"phase": "asking", "language": "hi", "answers": {"language": "hi"}, "asked": ["Q001_LANGUAGE"], "current_question": "Q002_INTENT", "last_spoken": "Yeh button sahi nahi hai. 1: Naam pata hai | 2: Meri yojna dhoondho | 3: Kaam ke hisaab se", "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 1, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "8"}}}, "response": {"status": 200, "actions": [{"say": "Yeh button sahi nahi hai. 1: Naam pata hai | 2: Meri yojna dhoondho | 3: Kaam ke hisaab se"}, {"gather": {"digits": 1, "speech": true}}], "state": {"phase": "asking", "language": "hi", "answers": {"language": "hi"}, "asked": ["Q001_LANGUAGE"], "current_question": "Q002_INTENT", "last_spoken": "Yeh button sahi nahi hai. 1: Naam pata hai | 2: Meri yojna dhoondho | 3: Kaam ke hisaab se", "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 2, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "8"}}}, "response": {"status": 200, "actions": [{"say": "Chaliye, aasaan karte hain. Sirf do vikalp suniye. 1: Naam pata hai | 2: Meri yojna dhoondho"}, {"gather": {"digits": 1, "speech": true}}], "state": {"phase": "asking", "language": "hi", "answers": {"language": "hi"}, "asked": ["Q001_LANGUAGE"], "current_question": "Q002_INTENT", "last_spoken": "Chaliye, aasaan karte hain. Sirf do vikalp suniye. 1: Naam pata hai | 2: Meri yojna dhoondho", "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 3, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "2"}}}, "response": {"status": 200, "actions": [{"say": "Aap kya karte hain? Vyapar ya dukaan 1. Bunkar ya karigar 2. Machhli palan 3. Kisan 4. Naukri ya kuch aur 5."}, {"gather": {"digits": 1, "speech": true}}], "state": {"phase": "asking", "language": "hi", "answers": {"language": "hi", "intent": "find_for_me"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT"], "current_question": "Q003B_PERSONA", "last_spoken": "Aap kya karte hain? Vyapar ya dukaan 1. Bunkar ya karigar 2. Machhli palan 3. Kisan 4. Naukri ya kuch aur 5.", "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "9"}}}, "response": {"status": 200, "actions": [{"say": "Yeh button sahi nahi hai. 1: Vyapar | 2: Bunkar | 3: Machhli palan | 4: Kisan | 5: Anya"}, {"gather": {"digits": 1, "speech": true}}], "state": {"phase": "asking", "language": "hi", "answers": {"language": "hi", "intent": "find_for_me"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT"], "current_question": "Q003B_PERSONA", "last_spoken": "Yeh button sahi nahi hai. 1: Vyapar | 2: Bunkar | 3: Machhli palan | 4: Kisan | 5: Anya", "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 1, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "9"}}}, "response": {"status": 200, "actions": [{"say": "Yeh button sahi nahi hai. 1: Vyapar | 2: Bunkar | 3: Machhli palan | 4: Kisan | 5: Anya"}, {"gather": {"digits": 1, "speech": true}}], "state": {"phase": "asking", "language": "hi", "answers": {"language": "hi", "intent": "find_for_me"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT"], "current_question": "Q003B_PERSONA", "last_spoken": "Yeh button sahi nahi hai. 1: Vyapar | 2: Bunkar | 3: Machhli palan | 4: Kisan | 5: Anya", "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 2, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "9"}}}, "response": {"status": 200, "actions": [{"say": "Chaliye, aasaan karte hain. Sirf do vikalp suniye. 1: Vyapar | 2: Bunkar"}, {"gather": {"digits": 1, "speech": true}}], "state": {"phase": "asking", "language": "hi", "answers": {"language": "hi", "intent": "find_for_me"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT"], "current_question": "Q003B_PERSONA", "last_spoken": "Chaliye, aasaan karte hain. Sirf do vikalp suniye. 1: Vyapar | 2: Bunkar", "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 3, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "1"}}}, "response": {"status": 200, "actions": [{"say": "Yeh yojnaayein mil sakti hain: Demo Scheme 1 for Business Support, Demo Scheme 13 for Business Support, Demo Scheme 19 for Business Support, Demo Scheme 7 for Business Support."}, {"end": true}], "state": {"phase": "presenting", "language": "hi", "answers": {"language": "hi", "intent": "find_for_me", "persona": "business"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "current_question": null, "last_spoken": "Yeh yojnaayein mil sakti hain: Demo Scheme 1 for Business Support, Demo Scheme 13 for Business Support, Demo Scheme 19 for Business Support, Demo Scheme 7 for Business Support.", "candidate_count": 4, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 13 for Business Support", "Demo Scheme 19 for Business Support", "Demo Scheme 7 for Business Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"dtmf": "1"}}}, "response": {"status": 200, "actions": [{"end": true}], "state": {"phase": "ended", "language": "hi", "answers": {"language": "hi", "intent": "find_for_me", "persona": "business"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "current_question": null, "last_spoken": "Yeh yojnaayein mil sakti hain: Demo Scheme 1 for Business Support, Demo Scheme 13 for Business Support, Demo Scheme 19 for Business Support, Demo Scheme 7 for Business Support.", "candidate_count": 4, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 13 for Business Support", "Demo Scheme 19 for Business Support", "Demo Scheme 7 for Business Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}]}, "m7_silence": {"label": "M7 - Long silence, ends politely", "script": ["!silence", "!silence", "!silence"], "turns": [{"request": {"method": "POST", "path": "/call/start", "body": null}, "response": {"status": 200, "actions": [{"say": "Namaste. Hindi ke liye 1 dabaiye. For English, press 2. Hindi aur English dono ke liye 3 dabaiye."}, {"gather": {"digits": 1, "speech": false}}], "state": {"phase": "asking", "language": null, "answers": {}, "asked": [], "current_question": "Q001_LANGUAGE", "last_spoken": "Namaste. Hindi ke liye 1 dabaiye. For English, press 2. Hindi aur English dono ke liye 3 dabaiye.", "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"timeout": 30}}}, "response": {"status": 200, "actions": [{"say": "Kisi yojna ka naam pata hai to 1. Apne liye yojna dhoondhni hai to 2. Kisi kaam ke liye madad chahiye to 3."}, {"gather": {"digits": 1, "speech": true}}], "state": {"phase": "asking", "language": "hi", "answers": {"language": "hi"}, "asked": ["Q001_LANGUAGE"], "current_question": "Q002_INTENT", "last_spoken": "Kisi yojna ka naam pata hai to 1. Apne liye yojna dhoondhni hai to 2. Kisi kaam ke liye madad chahiye to 3.", "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "menu_path": []}}}, {"request": {"method": "POST", "path": "/call/event", "body": {"call_id": "***", "event": {"timeout": 30}}}, "response": {"status": 200, "actions": [{"say": "Dhanyavaad. Phir call kijiye."}, {"end": true}], "state": {"phase": "ended", "language": "hi", "answers": {"language": "hi"}, "asked": ["Q001_LANGUAGE"], "current_question": "Q002_INTENT", "last_spoken": "Kisi yojna ka naam pata hai to 1. Apne liye yojna dhoondhni hai to 2. Kisi kaam ke liye madad chahiye to 3.", "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 30, "menu_path": []}}}]}}, "health": {"status": "ok", "db_loaded": true, "db_error": null, "bank_loaded": true, "bank_error": null, "active_calls": 0}, "dial_examples": {"011": {"slug": "demo-001", "sec_key": "1", "spoken_digits": "shunya ek ek", "text": "Rs 10000 one-time assistance for eligible business applicants."}, "054": {"slug": "demo-005", "sec_key": "4", "spoken_digits": "shunya paanch chaar", "text": "Apply at the nearest block office with the listed documents."}, "999": null}, "concurrency_proof": [{"call_id": "3fe4550f...", "language_answered": "hi"}, {"call_id": "9ae7058b...", "language_answered": "en"}]};
+
+function el(tag, attrs, ...children) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === 'class') e.className = v;
+    else if (k === 'html') e.innerHTML = v;
+    else e.setAttribute(k, v);
+  }
+  for (const c of children) {
+    if (c == null) continue;
+    e.append(c.nodeType ? c : document.createTextNode(c));
+  }
+  return e;
+}
+
+// ---- Tabs ----
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('panel-' + btn.dataset.panel).classList.add('active');
+  });
+});
+
+// ---- Badges ----
+const badgesEl = document.getElementById('badges');
+badgesEl.append(
+  el('span', {class: 'badge ok'}, 'db_loaded: true'),
+  el('span', {class: 'badge ok'}, 'bank_loaded: true'),
+  el('span', {class: 'badge'}, DATA.health.status === 'ok' ? 'status: ok' : 'status: degraded'),
+);
+
+// ---- Scenarios ----
+const scenarioListEl = document.getElementById('scenario-list');
+const turnsEl = document.getElementById('turns');
+const scenarioKeys = Object.keys(DATA.scenarios);
+
+function renderState(state) {
+  const pct = Math.max(4, Math.min(100, (state.candidate_count / 20) * 100));
+  return el('div', {class: 'state-strip'},
+    el('span', {}, el('b', {}, 'phase: '), el('span', {class: 'phase-pill ' + state.phase}, state.phase)),
+    el('div', {class: 'candidates-bar-wrap'},
+      el('b', {}, 'candidates: ' + state.candidate_count),
+      el('div', {class: 'candidates-bar'}, el('div', {class: 'candidates-bar-fill', style: `width:${pct}%`})),
+    ),
+    el('span', {}, el('b', {}, 'asked: '), state.asked.length),
+    el('span', {}, el('b', {}, 'answers: '), el('code', {class: 'mono'}, JSON.stringify(state.answers))),
+  );
+}
+
+function renderTurn(turn, i) {
+  const req = turn.request;
+  const bodyPreview = req.body ? JSON.stringify(req.body) : '(none)';
+  const wrap = el('div', {class: 'turn'});
+  wrap.append(
+    el('div', {class: 'turn-req'},
+      el('span', {class: 'method ' + req.method}, req.method),
+      el('span', {class: 'path'}, req.path),
+      el('span', {class: 'body-preview'}, bodyPreview),
+      el('span', {class: 'turn-status'}, turn.response.status + ' OK'),
+    ),
+  );
+  const body = el('div', {class: 'turn-body'});
+  const sayWrap = el('div', {class: 'says'});
+  let hasSay = false;
+  for (const a of turn.response.actions) {
+    if (a.say) { sayWrap.append(el('div', {class: 'say-line'}, a.say)); hasSay = true; }
+    else if (a.gather) {
+      const g = a.gather;
+      const mode = g.digits ? ('digits' + (g.speech ? ' + speech' : '')) : 'speech only';
+      sayWrap.append(el('div', {class: 'gather-line'}, `[waiting: ${mode}]`));
+    } else if (a.end) {
+      sayWrap.append(el('div', {class: 'gather-line'}, '[call ended]'));
+    }
+  }
+  if (hasSay || turn.response.actions.length) body.append(sayWrap);
+  body.append(renderState(turn.response.state));
+  wrap.append(body);
+  return wrap;
+}
+
+function showScenario(key) {
+  document.querySelectorAll('.scenario-btn').forEach(b => b.classList.toggle('active', b.dataset.key === key));
+  const sc = DATA.scenarios[key];
+  turnsEl.innerHTML = '';
+  sc.turns.forEach((t, i) => turnsEl.append(renderTurn(t, i)));
+}
+
+scenarioKeys.forEach((key, i) => {
+  const sc = DATA.scenarios[key];
+  const btn = el('button', {class: 'scenario-btn', 'data-key': key},
+    el('span', {class: 'id'}, key.split('_')[0].toUpperCase()),
+    el('span', {class: 'label'}, sc.label.replace(/^M\d+ - /, '')),
+  );
+  btn.addEventListener('click', () => showScenario(key));
+  scenarioListEl.append(btn);
+});
+showScenario(scenarioKeys[0]);
+
+// ---- Concurrency ----
+const concurrencyGridEl = document.getElementById('concurrency-grid');
+DATA.concurrency_proof.forEach((c, i) => {
+  concurrencyGridEl.append(
+    el('div', {class: 'call-card'},
+      el('h3', {}, `Call ${i + 1}`),
+      el('div', {class: 'cid'}, 'call_id: ' + c.call_id),
+      el('div', {class: 'answer'}, 'answered language = ', el('b', {}, c.language_answered)),
+    ),
+  );
+});
+
+// ---- Dial codes ----
+const dialGridEl = document.getElementById('dial-grid');
+for (const [code, result] of Object.entries(DATA.dial_examples)) {
+  if (result === null) {
+    dialGridEl.append(
+      el('div', {class: 'dial-card invalid'},
+        el('div', {class: 'code'}, code),
+        el('div', {class: 'spoken'}, '(no matching scheme)'),
+        el('div', {class: 'text'}, 'Not found — graceful message, back to main menu.'),
+      ),
+    );
+  } else {
+    dialGridEl.append(
+      el('div', {class: 'dial-card'},
+        el('div', {class: 'code'}, code),
+        el('div', {class: 'spoken'}, 'spoken: "' + result.spoken_digits + '"'),
+        el('div', {class: 'text'}, result.text),
+      ),
+    );
+  }
+}
+
+// ---- Health ----
+const healthGridEl = document.getElementById('health-grid');
+const h = DATA.health;
+[
+  ['status', h.status], ['db_loaded', h.db_loaded], ['bank_loaded', h.bank_loaded],
+  ['active_calls', h.active_calls],
+].forEach(([k, v]) => {
+  healthGridEl.append(
+    el('div', {class: 'health-card'},
+      el('div', {class: 'k'}, k),
+      el('div', {class: 'v' + (v === true || v === 'ok' ? ' ok' : '')}, String(v)),
+    ),
+  );
+});
+</script>

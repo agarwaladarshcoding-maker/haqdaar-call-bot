@@ -8,6 +8,7 @@ load_dotenv()
 
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_MODEL = os.getenv("LLM_MODEL", "claude-sonnet-5")
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "")  # empty -> provider's own default
 LLM_TIMEOUT_MS = int(os.getenv("LLM_TIMEOUT_MS", "700"))
 
 SARVAM_API_KEY = os.getenv("SARVAM_API_KEY", "")

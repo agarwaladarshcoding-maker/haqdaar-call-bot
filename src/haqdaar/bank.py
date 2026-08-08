@@ -16,11 +16,33 @@ from haqdaar import config
 
 RESERVED = {"0", "*", "#"}
 
-# requires mini-language: exactly four forms.
-#   always | <attr> == 'value' | <attr> in ['a','b'] | <attr> is answered
+# requires mini-language: exactly five forms, optionally joined by
+# ' and '/' or ' (checked per-conjunct, see _is_legal_clause below - a
+# bare `" and " in req` substring check is not enough, since it would
+# accept a well-formed first clause next to a garbage second clause).
+#   always | <attr> == 'value' | <attr> != 'value' | <attr> in ['a','b']
+#   | <attr> is answered
 _RE_EQ = re.compile(r"^([a-z_][a-z0-9_]*)\s*==\s*'([^']*)'$")
+_RE_NEQ = re.compile(r"^([a-z_][a-z0-9_]*)\s*!=\s*'([^']*)'$")
 _RE_IN = re.compile(r"^([a-z_][a-z0-9_]*)\s+in\s+\[(.*)\]$")
 _RE_ANSWERED = re.compile(r"^([a-z_][a-z0-9_]*)\s+is\s+answered$")
+
+
+def _is_legal_clause(clause: str) -> bool:
+    clause = clause.strip()
+    return bool(_RE_EQ.match(clause) or _RE_NEQ.match(clause) or _RE_IN.match(clause) or _RE_ANSWERED.match(clause))
+
+
+def _is_legal_requires(req: str) -> bool:
+    """True if every ' and '/' or '-joined clause is individually one of
+    the four atomic legal forms (or the whole thing is `always`)."""
+    if req == "always":
+        return True
+    if " and " in req:
+        return all(_is_legal_clause(p) for p in req.split(" and "))
+    if " or " in req:
+        return all(_is_legal_clause(p) for p in req.split(" or "))
+    return _is_legal_clause(req)
 
 
 class BankError(Exception):
@@ -116,11 +138,8 @@ def _validate(raw: dict, declared_attrs: set[str]) -> None:
             errors.append(f"{qid}: gain must be 1-10")
 
         req = q.get("requires", "always")
-        if req != "always" and not (
-            _RE_EQ.match(req) or _RE_IN.match(req) or _RE_ANSWERED.match(req)
-            or " and " in req or " or " in req
-        ):
-            errors.append(f"{qid}: requires `{req}` is not one of the four legal forms")
+        if not _is_legal_requires(req):
+            errors.append(f"{qid}: requires `{req}` is not one of the five legal forms")
 
     # DAG: every referenced attribute is produced by some question, no cycles
     producer = {w: ids[0] for w, ids in written.items()}
@@ -195,6 +214,14 @@ def _eval_requires(expr: str, answers: dict[str, Any]) -> bool:
     if m:
         attr, val = m.groups()
         return answers.get(attr) == val
+
+    m = _RE_NEQ.match(expr)
+    if m:
+        attr, val = m.groups()
+        # An unanswered attribute is neither equal nor unequal to any
+        # value in a meaningful sense - treat as not-yet-satisfied so a
+        # `!=` clause never fires on an attribute nobody has answered.
+        return attr in answers and answers[attr] != val
 
     m = _RE_IN.match(expr)
     if m:

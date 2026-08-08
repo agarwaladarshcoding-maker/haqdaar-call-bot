@@ -10,6 +10,7 @@ dependencies = [
   "httpx",
   "pytest",
   "python-dotenv",
+  "python-multipart",
 ]
 
 [build-system]

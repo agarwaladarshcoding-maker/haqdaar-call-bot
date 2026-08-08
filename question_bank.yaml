@@ -47,14 +47,14 @@ meta:
 #   *  repeat      -> replay whatever was just said (question OR answer)
 #   #  back        -> undo the last answer, re-ask the previous question
 controls:
-  "0": {action: main_menu, hi: "mukhya menu ke liye zero", en: "press zero for the main menu"}
-  "*": {action: repeat,    hi: "dobara sunne ke liye star", en: "press star to hear it again"}
-  "#": {action: back,      hi: "pichhle sawaal ke liye hash", en: "press hash for the previous question"}
+  "0": {action: main_menu, hi: "Mukhya menu ke liye zero dabaiye.", en: "Press zero for the main menu."}
+  "*": {action: repeat,    hi: "Dobara sunne ke liye star dabaiye.", en: "Press star to hear it again."}
+  "#": {action: back,      hi: "Pichhle sawaal ke liye hash dabaiye.", en: "Press hash for the previous question."}
 
 # Silence ladder. Total budget 30 seconds, then end politely.
 silence_ladder:
   - {at: 5,  action: nudge_short,  hi: "Suniye, koi button dabaiye."}
-  - {at: 15, action: two_options,  hi: "Do vikalp hain. Pehle ke liye 1, doosre ke liye 2."}
+  - {at: 15, action: two_options,  hi: "Do vikalp hain. Pehle vikalp ke liye 1 dabaiye. Doosre vikalp ke liye 2 dabaiye."}
   - {at: 25, action: are_you_there, hi: "Kya aap line par hain?"}
   - {at: 30, action: end_politely, hi: "Dhanyavaad. Phir call kijiye."}
 
@@ -106,8 +106,8 @@ questions:
   collect: {digits: 1, speech: false}
   speech_disabled_reason: "Language not yet known; ASR model cannot be selected."
   barge_in: false
-  prompt_hi: "Namaste. Hindi ke liye 1 dabaiye. For English, press 2. Hindi aur English dono ke liye 3 dabaiye."
-  prompt_en: "Namaste. Hindi ke liye 1 dabaiye. For English, press 2. Hindi aur English dono ke liye 3 dabaiye."
+  prompt_hi: "Namaste. Hindi ke liye 1 dabaiye. For English, press 2. Dono ke liye 3 dabaiye."
+  prompt_en: "Hello. For Hindi, press 1. For English, press 2. For both, press 3."
   dtmf:
     "1": {set: {language: hi}, hi: "Hindi", en: "Hindi"}
     "2": {set: {language: en}, hi: "English", en: "English"}
@@ -132,8 +132,8 @@ questions:
   why: "Splits the call into three completely different subgraphs. Highest-value branch in the system."
   tags: [session, mandatory, router]
   say_key: q002_intent
-  prompt_hi: "Kisi yojna ka naam pata hai to 1. Apne liye yojna dhoondhni hai to 2. Kisi kaam ke liye madad chahiye to 3."
-  prompt_en: "Press 1 if you know the scheme name. 2 to find schemes for you. 3 for help with a specific need."
+  prompt_hi: "Agar aapko yojna ka naam pata hai to 1 dabaiye. Apne liye yojna dhoondhni hai to 2 dabaiye. Kisi kaam ke liye madad chahiye to 3 dabaiye."
+  prompt_en: "If you know the scheme name, press 1. To find schemes for you, press 2. For help with a specific need, press 3."
   dtmf:
     "1": {set: {intent: known_scheme}, hi: "Naam pata hai", en: "I know the name"}
     "2": {set: {intent: find_for_me}, hi: "Meri yojna dhoondho", en: "Find schemes for me"}
@@ -169,8 +169,8 @@ questions:
   why: "Determines the broad identity of the caller. Cheap and trivially answerable, sets tone for later prompts."
   tags: [persona, high_gain, router]
   say_key: q003b_persona
-  prompt_hi: "Aap kya karte hain? Vyapar ya dukaan 1. Bunkar ya karigar 2. Machhli palan 3. Kisan 4. Naukri ya kuch aur 5."
-  prompt_en: "What is your work? Business or shop 1. Weaver or artisan 2. Fishing 3. Farmer 4. Salaried or other 5."
+  prompt_hi: "Aap kya karte hain? Vyapar ya dukaan ke liye 1 dabaiye. Bunkar ya karigar ke liye 2 dabaiye. Machhli palan ke liye 3 dabaiye. Kisan ke liye 4 dabaiye. Naukri ya kuch aur ke liye 5 dabaiye."
+  prompt_en: "What is your work? For business or shop, press 1. For weaver or artisan, press 2. For fishing, press 3. For farmer, press 4. For salaried or other, press 5."
   dtmf:
     "1": {set: {persona: business}, hi: "Vyapar", en: "Business"}
     "2": {set: {persona: artisan}, hi: "Bunkar", en: "Artisan"}
@@ -223,8 +223,8 @@ questions:
   why: "Cuts the 100-scheme catalogue by real theme volume (business 52, craft 13, fisheries 9, training 10, farming 6, welfare 10). Matches the menu navigator exactly, so a caller who narrows here lands on the same option they would have dialled directly."
   tags: [purpose, high_gain, router]
   say_key: q004_theme
-  prompt_hi: "Vyapar, udyog ya dukaan 1. Bunkar, coir ya dastkari 2. Machhli palan ya nauka 3. Prashikshan ya rozgar 4. Kheti ya baagwani 5. Pension, madad ya padhai 6."
-  prompt_en: "Business, industry or shop 1. Handloom, coir or handicraft 2. Fisheries or boats 3. Training or employment 4. Farming or horticulture 5. Pension, relief or study 6."
+  prompt_hi: "Vyapar, udyog ya dukaan ke liye 1 dabaiye. Bunkar, coir ya dastkari ke liye 2 dabaiye. Machhli palan ya nauka ke liye 3 dabaiye. Prashikshan ya rozgar ke liye 4 dabaiye. Kheti ya baagwani ke liye 5 dabaiye. Pension, madad ya padhai ke liye 6 dabaiye."
+  prompt_en: "For business, industry or shop, press 1. For handloom, coir or handicraft, press 2. For fisheries or boats, press 3. For training or employment, press 4. For farming or horticulture, press 5. For pension, relief or study, press 6."
   dtmf:
     "1": {set: {theme: business}, hi: "Vyapar", en: "Business"}
     "2": {set: {theme: craft}, hi: "Bunkar", en: "Craft"}
@@ -250,8 +250,8 @@ questions:
   why: "Manufacturing vs service-sector MSME rows use different subsidy schedules in this catalogue; 14/100 schemes gate on this directly."
   tags: [business, high_gain]
   say_key: q020_enterprise_type
-  prompt_hi: "Udyog kis tarah ka hai? Manufacturing ya utpadan 1. Service ya sewa 2. Dono 3."
-  prompt_en: "What kind of enterprise? Manufacturing 1. Service 2. Both 3."
+  prompt_hi: "Udyog kis tarah ka hai? Utpadan ke liye 1 dabaiye. Sewa ke liye 2 dabaiye. Dono ke liye 3 dabaiye."
+  prompt_en: "What kind of enterprise? For manufacturing, press 1. For service, press 2. For both, press 3."
   dtmf:
     "1": {set: {enterprise_type: manufacturing}, hi: "Utpadan", en: "Manufacturing"}
     "2": {set: {enterprise_type: service}, hi: "Sewa", en: "Service"}
@@ -279,8 +279,8 @@ questions:
   why: "Plant-and-machinery / fixed-capital investment ceilings decide MSME-vs-larger-unit eligibility on 18/100 rows - the single most common hard number in the business eligibility text."
   tags: [business, banded, high_gain]
   say_key: q022_investment
-  prompt_hi: "Machine ya udyog mein kitna paisa laga hai ya lagega? 25 lakh se kam 1. 25 lakh se 5 crore 2. 5 crore se zyada 3. Pata nahi 4."
-  prompt_en: "Investment in machinery or the unit? Under 25 lakh 1. 25 lakh to 5 crore 2. Over 5 crore 3. Not sure 4."
+  prompt_hi: "Machine ya udyog mein kitna paisa laga hai ya lagega? 25 lakh se kam ke liye 1 dabaiye. 25 lakh se 5 crore ke liye 2 dabaiye. 5 crore se zyada ke liye 3 dabaiye. Pata nahi to 4 dabaiye."
+  prompt_en: "Investment in machinery or the unit? For under 25 lakh, press 1. For 25 lakh to 5 crore, press 2. For over 5 crore, press 3. If not sure, press 4."
   dtmf:
     "1": {set: {investment_size: lt25l}, hi: "25L se kam", en: "Under 25L"}
     "2": {set: {investment_size: "25l_5cr"}, hi: "25L-5Cr", en: "25L-5Cr"}
@@ -295,8 +295,8 @@ questions:
   why: "18/100 business schemes condition benefit or eligibility on jobs the unit creates or employs - a recurring clause, not a rare one."
   tags: [business, banded]
   say_key: q023_employment
-  prompt_hi: "Kitne logon ko naukri di hai ya denge? Koi nahi 1. Ek se paanch 2. Paanch se zyada 3."
-  prompt_en: "How many people employed or will be employed? None 1. One to five 2. More than five 3."
+  prompt_hi: "Kitne logon ko naukri di hai ya denge? Koi nahi to 1 dabaiye. Ek se paanch ke liye 2 dabaiye. Paanch se zyada ke liye 3 dabaiye."
+  prompt_en: "How many people employed or will be employed? For none, press 1. For one to five, press 2. For more than five, press 3."
   dtmf:
     "1": {set: {employment_created: none}, hi: "Koi nahi", en: "None"}
     "2": {set: {employment_created: "1_5"}, hi: "1-5", en: "1-5"}
@@ -401,8 +401,8 @@ questions:
   why: "Coir, handloom and general handicraft schemes are separately administered bodies in this catalogue; the caller's craft decides which body applies."
   tags: [craft]
   say_key: q033_craft_type
-  prompt_hi: "Kaunsa kaam karte hain? Bunai ya handloom 1. Coir 2. Anya dastkari 3."
-  prompt_en: "What kind of craft? Weaving or handloom 1. Coir 2. Other handicraft 3."
+  prompt_hi: "Kaunsa kaam karte hain? Bunai ya handloom ke liye 1 dabaiye. Coir ke liye 2 dabaiye. Anya dastkari ke liye 3 dabaiye."
+  prompt_en: "What kind of craft? For weaving or handloom, press 1. For coir, press 2. For other handicraft, press 3."
   dtmf:
     "1": {set: {craft_type: handloom}, hi: "Bunai", en: "Handloom"}
     "2": {set: {craft_type: coir}, hi: "Coir", en: "Coir"}
@@ -430,8 +430,8 @@ questions:
   why: "Several exhibition, award and reactivation schemes require a minimum number of years in the trade (e.g. 3-year exhibition participation clause)."
   tags: [craft, fisheries]
   say_key: q035_years_trade
-  prompt_hi: "Kitne saal se yeh kaam kar rahe hain? Teen saal se kam 1. Teen saal ya zyada 2."
-  prompt_en: "How long in this trade? Under 3 years 1. 3 years or more 2."
+  prompt_hi: "Kitne saal se yeh kaam kar rahe hain? Teen saal se kam ke liye 1 dabaiye. Teen saal ya zyada ke liye 2 dabaiye."
+  prompt_en: "How long in this trade? For under 3 years, press 1. For 3 years or more, press 2."
   dtmf:
     "1": {set: {years_in_trade_band: lt3y}, hi: "3 saal se kam", en: "Under 3y"}
     "2": {set: {years_in_trade_band: gte3y}, hi: "3 saal ya zyada", en: "3y+"}
@@ -482,8 +482,8 @@ questions:
   why: "Every farming-theme scheme in this catalogue is crop-specific (paddy, coconut, sugarcane, fodder, protected cultivation). This one answer resolves almost the entire theme."
   tags: [farming, high_gain]
   say_key: q050_crop_grown
-  prompt_hi: "Mukhya fasal kya hai? Dhaan 1. Nariyal 2. Ganna 3. Chara ghas 4. Sanrakshit kheti ya baagwani 5. Anya 6."
-  prompt_en: "Main crop? Paddy 1. Coconut 2. Sugarcane 3. Fodder 4. Protected cultivation or horticulture 5. Other 6."
+  prompt_hi: "Mukhya fasal kya hai? Dhaan ke liye 1 dabaiye. Nariyal ke liye 2 dabaiye. Ganna ke liye 3 dabaiye. Chara ghas ke liye 4 dabaiye. Sanrakshit kheti ya baagwani ke liye 5 dabaiye. Anya ke liye 6 dabaiye."
+  prompt_en: "What is your main crop? For paddy, press 1. For coconut, press 2. For sugarcane, press 3. For fodder, press 4. For protected cultivation or horticulture, press 5. For other, press 6."
   dtmf:
     "1": {set: {crop_grown: paddy}, hi: "Dhaan", en: "Paddy"}
     "2": {set: {crop_grown: coconut}, hi: "Nariyal", en: "Coconut"}
@@ -522,8 +522,8 @@ questions:
   why: "Category-reserved schemes are a real, cleanly separable slice (7/100 business rows alone name SC/ST/women explicitly, plus welfare-theme rows)."
   tags: [demographic, high_gain]
   say_key: q060_category
-  prompt_hi: "Aapki shreni? Samanya 1. OBC 2. SC 3. ST 4. Alpsankhyak 5."
-  prompt_en: "Your category? General 1. OBC 2. SC 3. ST 4. Minority 5."
+  prompt_hi: "Aapki shreni kya hai? Samanya ke liye 1 dabaiye. OBC ke liye 2 dabaiye. SC ke liye 3 dabaiye. ST ke liye 4 dabaiye. Alpsankhyak ke liye 5 dabaiye."
+  prompt_en: "What is your category? For general, press 1. For OBC, press 2. For SC, press 3. For ST, press 4. For minority, press 5."
   dtmf:
     "1": {set: {social_category: GEN}, hi: "Samanya", en: "General"}
     "2": {set: {social_category: OBC}, hi: "OBC", en: "OBC"}
@@ -539,8 +539,8 @@ questions:
   why: "Women-specific schemes (entrepreneur, SHG-linked) recur across business and welfare themes here."
   tags: [demographic, cheap]
   say_key: q061_gender
-  prompt_hi: "Purush 1. Mahila 2. Anya 3."
-  prompt_en: "Male 1. Female 2. Other 3."
+  prompt_hi: "Aapka ling kya hai? Purush ke liye 1 dabaiye. Mahila ke liye 2 dabaiye. Anya ke liye 3 dabaiye."
+  prompt_en: "What is your gender? For male, press 1. For female, press 2. For other, press 3."
   dtmf:
     "1": {set: {gender: M}, hi: "Purush", en: "Male"}
     "2": {set: {gender: F}, hi: "Mahila", en: "Female"}
@@ -554,8 +554,8 @@ questions:
   why: "Age gates youth/skilling schemes at one end and welfare/pension-style schemes at the other, across every theme."
   tags: [demographic, banded, high_gain]
   say_key: q062_age
-  prompt_hi: "Umar? Athara se kam 1. Athara se chalees 2. Ikkatalis se unsath 3. Saath ya usse zyada 4."
-  prompt_en: "Age? Under 18 1. 18 to 40 2. 41 to 59 3. 60 or above 4."
+  prompt_hi: "Aapki umar kya hai? Athara saal se kam ke liye 1 dabaiye. Athara se chalees saal ke liye 2 dabaiye. Ikkatalis se unsath saal ke liye 3 dabaiye. Saath saal ya usse zyada ke liye 4 dabaiye."
+  prompt_en: "What is your age? For under 18, press 1. For 18 to 40, press 2. For 41 to 59, press 3. For 60 or above, press 4."
   dtmf:
     "1": {set: {age_band: lt18}, hi: "18 se kam", en: "Under 18"}
     "2": {set: {age_band: "18_40"}, hi: "18-40", en: "18-40"}
@@ -570,8 +570,8 @@ questions:
   why: "Income ceilings and BPL-style eligibility are common disqualifiers on welfare and reserved-category rows."
   tags: [demographic, banded, disqualifier, high_gain]
   say_key: q063_income
-  prompt_hi: "Saalana ghar ki aay? Ek lakh se kam 1. Ek se dhai lakh 2. Dhai se paanch lakh 3. Paanch lakh se zyada 4."
-  prompt_en: "Annual household income? Under 1 lakh 1. 1 to 2.5 lakh 2. 2.5 to 5 lakh 3. Over 5 lakh 4."
+  prompt_hi: "Saalana ghar ki aay kitni hai? Ek lakh se kam ke liye 1 dabaiye. Ek se dhai lakh ke liye 2 dabaiye. Dhai se paanch lakh ke liye 3 dabaiye. Paanch lakh se zyada ke liye 4 dabaiye."
+  prompt_en: "What is your annual household income? For under 1 lakh, press 1. For 1 to 2.5 lakh, press 2. For 2.5 to 5 lakh, press 3. For over 5 lakh, press 4."
   dtmf:
     "1": {set: {income_band: lt1l}, hi: "1 lakh se kam", en: "Under 1L"}
     "2": {set: {income_band: "1l_2_5l"}, hi: "1-2.5 lakh", en: "1-2.5L"}
@@ -644,8 +644,8 @@ questions:
   why: "Per-household benefit caps and relief-scheme amounts sometimes scale with household size."
   tags: [demographic, banded, low_gain]
   say_key: q068_household
-  prompt_hi: "Ghar mein kitne log? Ek do 1. Teen se paanch 2. Paanch se zyada 3."
-  prompt_en: "How many in the household? One or two 1. Three to five 2. More than five 3."
+  prompt_hi: "Ghar mein kitne log hain? Ek ya do ke liye 1 dabaiye. Teen se paanch ke liye 2 dabaiye. Paanch se zyada ke liye 3 dabaiye."
+  prompt_en: "How many people are in the household? For one or two, press 1. For three to five, press 2. For more than five, press 3."
   dtmf:
     "1": {set: {household_size: "1_2"}, hi: "1-2", en: "1-2"}
     "2": {set: {household_size: "3_5"}, hi: "3-5", en: "3-5"}
@@ -680,8 +680,8 @@ questions:
   why: "State only matters as a late tiebreaker on this catalogue - see CHANGE_REPORT #3. Asked after the higher-gain questions so it never crowds out a real discriminator."
   tags: [geography, tiebreaker, low_gain]
   say_key: q070_state
-  prompt_hi: "Aap kis rajya mein hain? Puducherry 1. West Bengal 2. Madhya Pradesh 3. Andhra Pradesh 4. Anya 5."
-  prompt_en: "Which state are you in? Puducherry 1. West Bengal 2. Madhya Pradesh 3. Andhra Pradesh 4. Other 5."
+  prompt_hi: "Aap kis rajya mein hain? Puducherry ke liye 1 dabaiye. West Bengal ke liye 2 dabaiye. Madhya Pradesh ke liye 3 dabaiye. Andhra Pradesh ke liye 4 dabaiye. Anya ke liye 5 dabaiye."
+  prompt_en: "Which state are you in? For Puducherry, press 1. For West Bengal, press 2. For Madhya Pradesh, press 3. For Andhra Pradesh, press 4. For other, press 5."
   dtmf:
     "1": {set: {state: PY}, hi: "Puducherry", en: "Puducherry"}
     "2": {set: {state: WB}, hi: "West Bengal", en: "West Bengal"}
@@ -765,8 +765,8 @@ questions:
   why: "A past rejection is the strongest signal that the caller needs the documents field, not the eligibility field."
   tags: [misc, rejection_risk]
   say_key: q090_applied_before
-  prompt_hi: "Pehle kabhi aavedan kiya tha? Haan, mila 1. Haan, reject hua 2. Nahi 3."
-  prompt_en: "Have you applied before? Yes, approved 1. Yes, rejected 2. No 3."
+  prompt_hi: "Pehle kabhi aavedan kiya tha? Haan aur mil gaya to 1 dabaiye. Haan par reject hua to 2 dabaiye. Nahi to 3 dabaiye."
+  prompt_en: "Have you applied before? If yes and approved, press 1. If yes but rejected, press 2. If no, press 3."
   dtmf:
     "1": {set: {_applied_before: approved}, hi: "Mila", en: "Approved"}
     "2": {set: {_applied_before: rejected}, hi: "Reject hua", en: "Rejected"}
@@ -860,8 +860,8 @@ questions:
   why: "Fallback when ASR cannot resolve the spoken name. Never guess a scheme; narrow by the real theme menu instead."
   tags: [known_scheme, fallback]
   say_key: q101_scheme_category
-  prompt_hi: "Naam samajh nahi aaya. Kis tarah ki yojna? Vyapar 1. Bunkar 2. Machhli palan 3. Prashikshan 4. Kheti 5. Pension madad 6."
-  prompt_en: "Didn't catch that. What kind of scheme? Business 1. Craft 2. Fisheries 3. Training 4. Farming 5. Welfare 6."
+  prompt_hi: "Naam samajh nahi aaya. Kis tarah ki yojna chahiye? Vyapar ke liye 1 dabaiye. Bunkar ke liye 2 dabaiye. Machhli palan ke liye 3 dabaiye. Prashikshan ke liye 4 dabaiye. Kheti ke liye 5 dabaiye. Pension madad ke liye 6 dabaiye."
+  prompt_en: "I didn't catch that. What kind of scheme do you need? For business, press 1. For craft, press 2. For fisheries, press 3. For training, press 4. For farming, press 5. For welfare, press 6."
   dtmf:
     "1": {set: {theme: business}, hi: "Vyapar", en: "Business"}
     "2": {set: {theme: craft}, hi: "Bunkar", en: "Craft"}
@@ -878,8 +878,8 @@ questions:
   why: "When the scheme is known, the only remaining question is which field to read. One turn to the answer."
   tags: [known_scheme, detail]
   say_key: q102_which_field
-  prompt_hi: "Kya jaanna hai? Patrata 1. Kaagaz 2. Kahan aavedan 3. Aakhri tareekh 4. Fayda 5."
-  prompt_en: "What do you need? Eligibility 1. Documents 2. Where to apply 3. Deadline 4. Benefit 5."
+  prompt_hi: "Aapko kya jaanna hai? Patrata ke liye 1 dabaiye. Kaagaz ke liye 2 dabaiye. Kahan aavedan karein uske liye 3 dabaiye. Aakhri tareekh ke liye 4 dabaiye. Fayda ke liye 5 dabaiye."
+  prompt_en: "What do you need to know? For eligibility, press 1. For documents, press 2. For where to apply, press 3. For the deadline, press 4. For the benefit, press 5."
   dtmf:
     "1": {set: {_field_wanted: eligibility}, hi: "Patrata", en: "Eligibility"}
     "2": {set: {_field_wanted: documents}, hi: "Kaagaz", en: "Documents"}

@@ -1,0 +1,570 @@
+<title>Haqdaar Voice — System Flow</title>
+<style>
+@font-face {
+  font-family: 'JBM';
+  src: local('JetBrains Mono');
+}
+:root {
+  --paper: #F7F4EC;
+  --paper-raised: #FDFBF6;
+  --ink: #2B2620;
+  --ink-dim: #6B6355;
+  --ink-faint: #A79E8C;
+  --rule: #DED5C2;
+  --rule-strong: #C9BD9F;
+  --accent: #A8461F;
+  --accent-dim: #C97B57;
+  --accent-wash: #F1E0D3;
+  --kept: #5C7048;
+  --kept-wash: #E7ECDE;
+  --dropped: #9B4A3A;
+  --dropped-wash: #F3E2DC;
+  --global-key: #4A5A7A;
+  --global-key-wash: #E4E8EF;
+  --key-face: #FDFBF6;
+  --key-shadow: #C9BD9F;
+  --focus: #A8461F;
+  --wire: #C9BD9F;
+  --wire-active: #A8461F;
+  --node-idle-bg: #FDFBF6;
+  --node-idle-border: #C9BD9F;
+  --node-idle-text: #6B6355;
+  --node-active-bg: #F1E0D3;
+  --node-active-border: #A8461F;
+  --node-active-text: #A8461F;
+}
+:root:not([data-theme="light"]) {
+  @media (prefers-color-scheme: dark) {
+    --paper: #1A1712;
+    --paper-raised: #23201A;
+    --ink: #EDE6D6;
+    --ink-dim: #A79A82;
+    --ink-faint: #6E6555;
+    --rule: #3A3428;
+    --rule-strong: #4C4433;
+    --accent: #E0824F;
+    --accent-dim: #B5623A;
+    --accent-wash: #33251C;
+    --kept: #9DB584;
+    --kept-wash: #263021;
+    --dropped: #D08975;
+    --dropped-wash: #34211C;
+    --global-key: #8FA3CC;
+    --global-key-wash: #232A38;
+    --key-face: #23201A;
+    --key-shadow: #100E0A;
+    --focus: #E0824F;
+    --wire: #4C4433;
+    --wire-active: #E0824F;
+    --node-idle-bg: #23201A;
+    --node-idle-border: #4C4433;
+    --node-idle-text: #A79A82;
+    --node-active-bg: #33251C;
+    --node-active-border: #E0824F;
+    --node-active-text: #E0824F;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #1A1712;
+  --paper-raised: #23201A;
+  --ink: #EDE6D6;
+  --ink-dim: #A79A82;
+  --ink-faint: #6E6555;
+  --rule: #3A3428;
+  --rule-strong: #4C4433;
+  --accent: #E0824F;
+  --accent-dim: #B5623A;
+  --accent-wash: #33251C;
+  --kept: #9DB584;
+  --kept-wash: #263021;
+  --dropped: #D08975;
+  --dropped-wash: #34211C;
+  --global-key: #8FA3CC;
+  --global-key-wash: #232A38;
+  --key-face: #23201A;
+  --key-shadow: #100E0A;
+  --focus: #E0824F;
+  --wire: #4C4433;
+  --wire-active: #E0824F;
+  --node-idle-bg: #23201A;
+  --node-idle-border: #4C4433;
+  --node-idle-text: #A79A82;
+  --node-active-bg: #33251C;
+  --node-active-border: #E0824F;
+  --node-active-text: #E0824F;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+body {
+  padding: clamp(14px, 3vw, 32px);
+  max-width: 1360px;
+  margin: 0 auto;
+}
+.mono {
+  font-family: 'JBM', ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+header {
+  display: flex; justify-content: space-between; align-items: flex-end; gap: 24px;
+  padding-bottom: 16px; border-bottom: 2px solid var(--rule-strong); margin-bottom: 20px; flex-wrap: wrap;
+}
+.brand-eyebrow {
+  font-family: 'JBM', ui-monospace, monospace; font-size: 11px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--accent); margin: 0 0 6px;
+}
+h1 { font-size: clamp(20px, 2.6vw, 27px); margin: 0; font-weight: 700; letter-spacing: -0.01em; text-wrap: balance; }
+.subhead { color: var(--ink-dim); font-size: 13.5px; margin: 8px 0 0; max-width: 68ch; line-height: 1.5; }
+
+.stage {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.95fr) minmax(0, 1.05fr) minmax(280px, 0.8fr);
+  gap: 20px;
+  align-items: start;
+}
+@media (max-width: 1050px) {
+  .stage { grid-template-columns: 1fr; }
+}
+
+/* -------- architecture diagram -------- */
+.diagram-panel {
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  padding: 20px;
+  position: sticky;
+  top: 14px;
+}
+.panel-label {
+  font-family: 'JBM', ui-monospace, monospace; font-size: 10.5px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--ink-faint); margin: 0 0 14px;
+}
+.diagram {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dnode {
+  border: 1.5px solid var(--node-idle-border);
+  background: var(--node-idle-bg);
+  border-radius: 8px;
+  padding: 10px 12px;
+  transition: background 0.35s ease, border-color 0.35s ease, transform 0.2s ease;
+}
+.dnode.active {
+  background: var(--node-active-bg);
+  border-color: var(--node-active-border);
+  transform: scale(1.02);
+}
+.dnode-name { font-family: 'JBM', ui-monospace, monospace; font-size: 13px; font-weight: 700; color: var(--node-idle-text); transition: color 0.35s ease; }
+.dnode.active .dnode-name { color: var(--node-active-text); }
+.dnode-desc { font-size: 11px; color: var(--ink-faint); margin-top: 3px; line-height: 1.4; }
+.dwire {
+  width: 2px;
+  height: 16px;
+  background: var(--wire);
+  margin-left: 20px;
+  transition: background 0.35s ease;
+}
+.dwire.active { background: var(--wire-active); }
+.dnode-status {
+  display: inline-block;
+  font-family: 'JBM', ui-monospace, monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 999px;
+  margin-left: 8px;
+  background: var(--node-idle-border);
+  color: var(--paper-raised);
+  vertical-align: middle;
+}
+.dnode.active .dnode-status { background: var(--node-active-border); }
+.dnode.future { opacity: 0.5; }
+.dnode.future .dnode-status { background: var(--ink-faint); }
+
+.diagram-legend {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--rule-strong);
+  font-size: 11.5px;
+  color: var(--ink-dim);
+  line-height: 1.6;
+}
+.diagram-legend .hl { color: var(--accent); font-weight: 700; }
+
+/* -------- transcript -------- */
+.transcript-panel {
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  padding: 20px;
+  min-height: 400px;
+}
+.status-strip { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.status-chip {
+  font-family: 'JBM', ui-monospace, monospace; font-size: 11px; padding: 4px 9px; border-radius: 999px;
+  background: var(--paper); border: 1px solid var(--rule); color: var(--ink-dim);
+  display: flex; align-items: center; gap: 5px;
+}
+.status-chip .v { color: var(--ink); font-weight: 700; }
+.status-chip.phase-asking { border-color: var(--accent-dim); color: var(--accent); }
+.status-chip.phase-presenting { border-color: var(--kept); color: var(--kept); }
+.status-chip.phase-ended { border-color: var(--dropped); color: var(--dropped); }
+
+.transcript { display: flex; flex-direction: column; gap: 0; max-height: 560px; overflow-y: auto; padding-right: 4px; }
+.turn { position: relative; padding: 12px 0 12px 26px; border-left: 2px solid var(--rule); }
+.turn:first-child { padding-top: 0; }
+.turn::before {
+  content: ''; position: absolute; left: -6px; top: 16px; width: 10px; height: 10px; border-radius: 50%;
+  background: var(--paper-raised); border: 2px solid var(--rule-strong);
+}
+.turn:first-child::before { top: 4px; }
+.turn.is-current::before { border-color: var(--accent); background: var(--accent); }
+.turn.is-global::before { border-color: var(--global-key); background: var(--global-key); }
+.turn-index { font-family: 'JBM', ui-monospace, monospace; font-size: 10.5px; color: var(--ink-faint); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 5px; }
+.turn-qid { font-family: 'JBM', ui-monospace, monospace; font-size: 12px; color: var(--accent); margin-bottom: 4px; }
+.turn-prompt { font-size: 13px; color: var(--ink-dim); line-height: 1.5; margin: 0 0 8px; max-width: 54ch; }
+.turn-answer {
+  display: inline-flex; align-items: baseline; gap: 8px; background: var(--kept-wash); color: var(--kept);
+  border-radius: 5px; padding: 3px 9px; font-size: 12.5px; font-weight: 600;
+}
+.turn-answer.is-global { background: var(--global-key-wash); color: var(--global-key); }
+.turn-answer .mono { font-size: 11.5px; opacity: 0.85; }
+.turn-meta { margin-top: 7px; font-size: 11.5px; color: var(--ink-faint); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.turn-meta .mono { color: var(--ink-dim); }
+.turn-files { margin-top: 6px; display: flex; gap: 5px; flex-wrap: wrap; }
+.turn-file-tag {
+  font-family: 'JBM', ui-monospace, monospace; font-size: 9.5px; padding: 1px 6px; border-radius: 4px;
+  background: var(--accent-wash); color: var(--accent);
+}
+
+/* -------- keypad / controls panel -------- */
+.panel {
+  background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 10px; padding: 20px;
+  position: sticky; top: 14px;
+}
+.count-display { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+.count-number { font-family: 'JBM', ui-monospace, monospace; font-size: 34px; font-weight: 700; line-height: 1; color: var(--accent); }
+.count-total { font-size: 14px; color: var(--ink-faint); }
+.count-caption { font-size: 12px; color: var(--ink-dim); margin-bottom: 14px; }
+.candidate-list { list-style: none; margin: 0 0 14px; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 110px; overflow-y: auto; }
+.candidate-list li { font-size: 11.5px; color: var(--ink); padding: 4px 8px; background: var(--kept-wash); border-radius: 5px; border-left: 2px solid var(--kept); }
+.candidate-list .more { color: var(--ink-faint); background: none; border-left-color: var(--rule-strong); font-style: italic; }
+
+.current-q { border-top: 1px dashed var(--rule-strong); padding-top: 14px; margin-top: 4px; }
+.current-q-id { font-family: 'JBM', ui-monospace, monospace; font-size: 11.5px; color: var(--accent); margin-bottom: 6px; }
+.current-q-prompt { font-size: 12px; color: var(--ink-dim); line-height: 1.45; margin: 0 0 12px; }
+
+.keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-bottom: 12px; }
+.key {
+  font-family: 'JBM', ui-monospace, monospace; background: var(--key-face); border: 1px solid var(--rule-strong);
+  border-radius: 8px; box-shadow: 0 2px 0 var(--key-shadow); padding: 8px 5px 7px; cursor: pointer;
+  text-align: left; color: var(--ink); display: flex; flex-direction: column; gap: 3px; min-height: 46px;
+  transition: transform 0.05s ease, box-shadow 0.05s ease;
+}
+.key:hover { border-color: var(--accent-dim); }
+.key:active { transform: translateY(2px); box-shadow: 0 0 0 var(--key-shadow); }
+.key:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.key-digit { font-size: 14px; font-weight: 700; color: var(--accent); }
+.key-label { font-size: 9.5px; color: var(--ink-dim); font-family: -apple-system, sans-serif; line-height: 1.15; }
+.key.empty { visibility: hidden; }
+.key.invalid-demo { opacity: 0.4; }
+
+.global-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+.global-key {
+  font-family: 'JBM', ui-monospace, monospace; background: var(--global-key-wash); border: 1px solid var(--global-key);
+  border-radius: 8px; padding: 8px 5px; cursor: pointer; text-align: center; color: var(--global-key);
+  display: flex; flex-direction: column; gap: 2px; transition: opacity 0.1s ease;
+}
+.global-key:hover { opacity: 0.8; }
+.global-key:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.global-key .gk-digit { font-size: 13px; font-weight: 700; }
+.global-key .gk-label { font-size: 9px; font-family: -apple-system, sans-serif; opacity: 0.85; }
+
+.end-card { text-align: center; padding: 10px 4px 2px; color: var(--ink-dim); font-size: 12.5px; line-height: 1.6; }
+.end-card strong { color: var(--ink); display: block; font-size: 13.5px; margin-bottom: 4px; }
+.end-card.is-ended strong { color: var(--dropped); }
+
+.controls { display: flex; gap: 7px; margin-top: 12px; }
+.btn {
+  font-family: -apple-system, sans-serif; font-size: 12px; font-weight: 600; padding: 7px 10px; border-radius: 6px;
+  border: 1px solid var(--rule-strong); background: var(--paper); color: var(--ink-dim); cursor: pointer; flex: 1;
+}
+.btn:hover { color: var(--ink); border-color: var(--accent-dim); }
+.btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--paper-raised); }
+.btn.primary:hover { background: var(--accent-dim); border-color: var(--accent-dim); color: var(--paper-raised); }
+
+footer {
+  margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--rule);
+  font-size: 11.5px; color: var(--ink-faint); line-height: 1.6;
+}
+footer code { font-family: 'JBM', ui-monospace, monospace; background: var(--accent-wash); color: var(--accent); padding: 1px 5px; border-radius: 3px; font-size: 11px; }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<header>
+  <div>
+    <p class="brand-eyebrow">Haqdaar Voice — system flow, live</p>
+    <h1>Watch a call move through the real code, file by file</h1>
+    <p class="subhead">Left: every file in the system, lighting up as it actually gets used. Right: the call itself — press keys, undo, wait for silence. This is not a mockup; every turn below is a real return value from <code class="mono">haqdaar.engine.step()</code>.</p>
+  </div>
+</header>
+
+<div class="stage">
+  <div class="diagram-panel">
+    <p class="panel-label">System — active files light up per turn</p>
+    <div class="diagram" id="diagram"></div>
+    <div class="diagram-legend">
+      <span class="hl">■</span> lit = touched on the turn just taken &nbsp;·&nbsp; dim = built but idle this turn &nbsp;·&nbsp; faded = not built yet (future step)
+    </div>
+  </div>
+
+  <div class="transcript-panel">
+    <div class="status-strip" id="statusStrip"></div>
+    <div class="transcript" id="transcript"></div>
+  </div>
+
+  <div>
+    <div class="panel">
+      <p class="panel-label">Candidates remaining</p>
+      <div class="count-display">
+        <span class="count-number" id="countNumber">20</span>
+        <span class="count-total">/ 20 schemes</span>
+      </div>
+      <p class="count-caption" id="countCaption"></p>
+      <ul class="candidate-list" id="candidateList"></ul>
+
+      <div class="current-q" id="currentQBlock">
+        <p class="panel-label" style="margin-bottom:6px;">Now asking</p>
+        <div class="current-q-id mono" id="currentQId"></div>
+        <p class="current-q-prompt" id="currentQPrompt"></p>
+        <div class="keypad" id="keypad"></div>
+      </div>
+
+      <div class="end-card" id="endCard" style="display:none;"></div>
+
+      <p class="panel-label" style="margin-top:14px;">Global controls</p>
+      <div class="global-row">
+        <button class="global-key" id="btnZero"><span class="gk-digit mono">0</span><span class="gk-label">Restart</span></button>
+        <button class="global-key" id="btnStar"><span class="gk-digit mono">*</span><span class="gk-label">Repeat</span></button>
+        <button class="global-key" id="btnHash"><span class="gk-digit mono">#</span><span class="gk-label">Undo</span></button>
+      </div>
+
+      <div class="controls">
+        <button class="btn" id="silenceBtn">🔇 30s silence</button>
+        <button class="btn primary" id="restartBtn">↺ New call</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  Trace generated by driving <code>haqdaar.engine.step()</code> with real DTMF/timeout events against the 20-scheme demo database — 70 reachable states recorded, each tagged with which files actually ran that turn. Files marked "future" (menu.py, api.py, sim.py, voice.py) are not built yet — Steps 6-8 — and never light up because nothing here calls them yet.
+</footer>
+
+<script>
+const TRACE = {"nodes": {"": {"phase": "asking", "question_id": "Q001_LANGUAGE", "prompt": "Namaste. Hindi ke liye 1 dabaiye. For English, press 2. Hindi aur English dono ke liye 3 dabaiye.", "options": [{"key": "1", "hi": "Hindi", "en": "Hindi"}, {"key": "2", "hi": "English", "en": "English"}, {"key": "3", "hi": "Hindi aur English", "en": "Hindi and English"}], "answers": {}, "asked": [], "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 10 for Other Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py", "select.py"]}, "silence30": {"phase": "asking", "question_id": "Q002_INTENT", "prompt": "Kisi yojna ka naam pata hai to 1. Apne liye yojna dhoondhni hai to 2. Kisi kaam ke liye madad chahiye to 3.", "options": [{"key": "1", "hi": "Naam pata hai", "en": "I know the name"}, {"key": "2", "hi": "Meri yojna dhoondho", "en": "Find schemes for me"}, {"key": "3", "hi": "Kaam ke hisaab se", "en": "By purpose"}], "answers": {"language": "hi"}, "asked": ["Q001_LANGUAGE"], "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 10 for Other Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py", "select.py"]}, "silence30|silence30": {"phase": "ended", "question_id": "Q002_INTENT", "prompt": "Kisi yojna ka naam pata hai to 1. Apne liye yojna dhoondhni hai to 2. Kisi kaam ke liye madad chahiye to 3.", "options": [{"key": "1", "hi": "Naam pata hai", "en": "I know the name"}, {"key": "2", "hi": "Meri yojna dhoondho", "en": "Find schemes for me"}, {"key": "3", "hi": "Kaam ke hisaab se", "en": "By purpose"}], "answers": {"language": "hi"}, "asked": ["Q001_LANGUAGE"], "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 10 for Other Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 30, "active_files": ["engine.py", "bank.py"]}, "silence30|dtmf:1": {"phase": "asking", "question_id": "Q100_SCHEME_NAME", "prompt": "Yojna ka naam boliye.", "options": [], "answers": {"language": "hi", "intent": "known_scheme"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT"], "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 10 for Other Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py", "select.py"]}, "silence30|dtmf:1|silence30": {"phase": "ended", "question_id": "Q100_SCHEME_NAME", "prompt": "Yojna ka naam boliye.", "options": [], "answers": {"language": "hi", "intent": "known_scheme"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT"], "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 10 for Other Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 30, "active_files": ["engine.py", "bank.py"]}, "silence30|dtmf:2": {"phase": "asking", "question_id": "Q003B_PERSONA", "prompt": "Aap kya karte hain? Vyapar ya dukaan 1. Bunkar ya karigar 2. Machhli palan 3. Kisan 4. Naukri ya kuch aur 5.", "options": [{"key": "1", "hi": "Vyapar", "en": "Business"}, {"key": "2", "hi": "Bunkar", "en": "Artisan"}, {"key": "3", "hi": "Machhli palan", "en": "Fisher"}, {"key": "4", "hi": "Kisan", "en": "Farmer"}, {"key": "5", "hi": "Anya", "en": "Other"}], "answers": {"language": "hi", "intent": "find_for_me"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT"], "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 10 for Other Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py", "select.py"]}, "silence30|dtmf:2|silence30": {"phase": "ended", "question_id": "Q003B_PERSONA", "prompt": "Aap kya karte hain? Vyapar ya dukaan 1. Bunkar ya karigar 2. Machhli palan 3. Kisan 4. Naukri ya kuch aur 5.", "options": [{"key": "1", "hi": "Vyapar", "en": "Business"}, {"key": "2", "hi": "Bunkar", "en": "Artisan"}, {"key": "3", "hi": "Machhli palan", "en": "Fisher"}, {"key": "4", "hi": "Kisan", "en": "Farmer"}, {"key": "5", "hi": "Anya", "en": "Other"}], "answers": {"language": "hi", "intent": "find_for_me"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT"], "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 10 for Other Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 30, "active_files": ["engine.py", "bank.py"]}, "silence30|dtmf:2|dtmf:1": {"phase": "presenting", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 1 for Business Support, Demo Scheme 13 for Business Support, Demo Scheme 19 for Business Support, Demo Scheme 7 for Business Support.", "options": [], "answers": {"language": "hi", "intent": "find_for_me", "persona": "business"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 4, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 13 for Business Support", "Demo Scheme 19 for Business Support", "Demo Scheme 7 for Business Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py"]}, "silence30|dtmf:2|dtmf:1|silence30": {"phase": "ended", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 1 for Business Support, Demo Scheme 13 for Business Support, Demo Scheme 19 for Business Support, Demo Scheme 7 for Business Support.", "options": [], "answers": {"language": "hi", "intent": "find_for_me", "persona": "business"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 4, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 13 for Business Support", "Demo Scheme 19 for Business Support", "Demo Scheme 7 for Business Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py"]}, "silence30|dtmf:2|dtmf:2": {"phase": "presenting", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 14 for Artisan Support, Demo Scheme 2 for Artisan Support, Demo Scheme 20 for Artisan Support, Demo Scheme 8 for Artisan Support.", "options": [], "answers": {"language": "hi", "intent": "find_for_me", "persona": "artisan"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 4, "candidate_names": ["Demo Scheme 14 for Artisan Support", "Demo Scheme 2 for Artisan Support", "Demo Scheme 20 for Artisan Support", "Demo Scheme 8 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py"]}, "silence30|dtmf:2|dtmf:2|silence30": {"phase": "ended", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 14 for Artisan Support, Demo Scheme 2 for Artisan Support, Demo Scheme 20 for Artisan Support, Demo Scheme 8 for Artisan Support.", "options": [], "answers": {"language": "hi", "intent": "find_for_me", "persona": "artisan"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 4, "candidate_names": ["Demo Scheme 14 for Artisan Support", "Demo Scheme 2 for Artisan Support", "Demo Scheme 20 for Artisan Support", "Demo Scheme 8 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py"]}, "silence30|dtmf:2|dtmf:3": {"phase": "presenting", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 15 for Fisher Support, Demo Scheme 3 for Fisher Support, Demo Scheme 9 for Fisher Support.", "options": [], "answers": {"language": "hi", "intent": "find_for_me", "persona": "fisher"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 3, "candidate_names": ["Demo Scheme 15 for Fisher Support", "Demo Scheme 3 for Fisher Support", "Demo Scheme 9 for Fisher Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py"]}, "silence30|dtmf:2|dtmf:3|silence30": {"phase": "ended", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 15 for Fisher Support, Demo Scheme 3 for Fisher Support, Demo Scheme 9 for Fisher Support.", "options": [], "answers": {"language": "hi", "intent": "find_for_me", "persona": "fisher"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 3, "candidate_names": ["Demo Scheme 15 for Fisher Support", "Demo Scheme 3 for Fisher Support", "Demo Scheme 9 for Fisher Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py"]}, "silence30|dtmf:3": {"phase": "asking", "question_id": "Q003B_PERSONA", "prompt": "Aap kya karte hain? Vyapar ya dukaan 1. Bunkar ya karigar 2. Machhli palan 3. Kisan 4. Naukri ya kuch aur 5.", "options": [{"key": "1", "hi": "Vyapar", "en": "Business"}, {"key": "2", "hi": "Bunkar", "en": "Artisan"}, {"key": "3", "hi": "Machhli palan", "en": "Fisher"}, {"key": "4", "hi": "Kisan", "en": "Farmer"}, {"key": "5", "hi": "Anya", "en": "Other"}], "answers": {"language": "hi", "intent": "by_purpose"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT"], "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 10 for Other Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py", "select.py"]}, "silence30|dtmf:3|silence30": {"phase": "ended", "question_id": "Q003B_PERSONA", "prompt": "Aap kya karte hain? Vyapar ya dukaan 1. Bunkar ya karigar 2. Machhli palan 3. Kisan 4. Naukri ya kuch aur 5.", "options": [{"key": "1", "hi": "Vyapar", "en": "Business"}, {"key": "2", "hi": "Bunkar", "en": "Artisan"}, {"key": "3", "hi": "Machhli palan", "en": "Fisher"}, {"key": "4", "hi": "Kisan", "en": "Farmer"}, {"key": "5", "hi": "Anya", "en": "Other"}], "answers": {"language": "hi", "intent": "by_purpose"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT"], "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 10 for Other Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 30, "active_files": ["engine.py", "bank.py"]}, "silence30|dtmf:3|dtmf:1": {"phase": "presenting", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 1 for Business Support, Demo Scheme 13 for Business Support, Demo Scheme 19 for Business Support, Demo Scheme 7 for Business Support.", "options": [], "answers": {"language": "hi", "intent": "by_purpose", "persona": "business"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 4, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 13 for Business Support", "Demo Scheme 19 for Business Support", "Demo Scheme 7 for Business Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py"]}, "silence30|dtmf:3|dtmf:1|silence30": {"phase": "ended", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 1 for Business Support, Demo Scheme 13 for Business Support, Demo Scheme 19 for Business Support, Demo Scheme 7 for Business Support.", "options": [], "answers": {"language": "hi", "intent": "by_purpose", "persona": "business"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 4, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 13 for Business Support", "Demo Scheme 19 for Business Support", "Demo Scheme 7 for Business Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py"]}, "silence30|dtmf:3|dtmf:2": {"phase": "presenting", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 14 for Artisan Support, Demo Scheme 2 for Artisan Support, Demo Scheme 20 for Artisan Support, Demo Scheme 8 for Artisan Support.", "options": [], "answers": {"language": "hi", "intent": "by_purpose", "persona": "artisan"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 4, "candidate_names": ["Demo Scheme 14 for Artisan Support", "Demo Scheme 2 for Artisan Support", "Demo Scheme 20 for Artisan Support", "Demo Scheme 8 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py"]}, "silence30|dtmf:3|dtmf:2|silence30": {"phase": "ended", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 14 for Artisan Support, Demo Scheme 2 for Artisan Support, Demo Scheme 20 for Artisan Support, Demo Scheme 8 for Artisan Support.", "options": [], "answers": {"language": "hi", "intent": "by_purpose", "persona": "artisan"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 4, "candidate_names": ["Demo Scheme 14 for Artisan Support", "Demo Scheme 2 for Artisan Support", "Demo Scheme 20 for Artisan Support", "Demo Scheme 8 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py"]}, "silence30|dtmf:3|dtmf:3": {"phase": "presenting", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 15 for Fisher Support, Demo Scheme 3 for Fisher Support, Demo Scheme 9 for Fisher Support.", "options": [], "answers": {"language": "hi", "intent": "by_purpose", "persona": "fisher"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 3, "candidate_names": ["Demo Scheme 15 for Fisher Support", "Demo Scheme 3 for Fisher Support", "Demo Scheme 9 for Fisher Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py"]}, "silence30|dtmf:3|dtmf:3|silence30": {"phase": "ended", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 15 for Fisher Support, Demo Scheme 3 for Fisher Support, Demo Scheme 9 for Fisher Support.", "options": [], "answers": {"language": "hi", "intent": "by_purpose", "persona": "fisher"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 3, "candidate_names": ["Demo Scheme 15 for Fisher Support", "Demo Scheme 3 for Fisher Support", "Demo Scheme 9 for Fisher Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py"]}, "dtmf:2": {"phase": "asking", "question_id": "Q002_INTENT", "prompt": "Kisi yojna ka naam pata hai to 1. Apne liye yojna dhoondhni hai to 2. Kisi kaam ke liye madad chahiye to 3.", "options": [{"key": "1", "hi": "Naam pata hai", "en": "I know the name"}, {"key": "2", "hi": "Meri yojna dhoondho", "en": "Find schemes for me"}, {"key": "3", "hi": "Kaam ke hisaab se", "en": "By purpose"}], "answers": {"language": "en"}, "asked": ["Q001_LANGUAGE"], "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 10 for Other Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py", "select.py"]}, "dtmf:2|silence30": {"phase": "ended", "question_id": "Q002_INTENT", "prompt": "Kisi yojna ka naam pata hai to 1. Apne liye yojna dhoondhni hai to 2. Kisi kaam ke liye madad chahiye to 3.", "options": [{"key": "1", "hi": "Naam pata hai", "en": "I know the name"}, {"key": "2", "hi": "Meri yojna dhoondho", "en": "Find schemes for me"}, {"key": "3", "hi": "Kaam ke hisaab se", "en": "By purpose"}], "answers": {"language": "en"}, "asked": ["Q001_LANGUAGE"], "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 10 for Other Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 30, "active_files": ["engine.py", "bank.py"]}, "dtmf:2|dtmf:1": {"phase": "asking", "question_id": "Q100_SCHEME_NAME", "prompt": "Yojna ka naam boliye.", "options": [], "answers": {"language": "en", "intent": "known_scheme"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT"], "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 10 for Other Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py", "select.py"]}, "dtmf:2|dtmf:1|silence30": {"phase": "ended", "question_id": "Q100_SCHEME_NAME", "prompt": "Yojna ka naam boliye.", "options": [], "answers": {"language": "en", "intent": "known_scheme"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT"], "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 10 for Other Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 30, "active_files": ["engine.py", "bank.py"]}, "dtmf:2|dtmf:2": {"phase": "asking", "question_id": "Q003B_PERSONA", "prompt": "Aap kya karte hain? Vyapar ya dukaan 1. Bunkar ya karigar 2. Machhli palan 3. Kisan 4. Naukri ya kuch aur 5.", "options": [{"key": "1", "hi": "Vyapar", "en": "Business"}, {"key": "2", "hi": "Bunkar", "en": "Artisan"}, {"key": "3", "hi": "Machhli palan", "en": "Fisher"}, {"key": "4", "hi": "Kisan", "en": "Farmer"}, {"key": "5", "hi": "Anya", "en": "Other"}], "answers": {"language": "en", "intent": "find_for_me"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT"], "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 10 for Other Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py", "select.py"]}, "dtmf:2|dtmf:2|silence30": {"phase": "ended", "question_id": "Q003B_PERSONA", "prompt": "Aap kya karte hain? Vyapar ya dukaan 1. Bunkar ya karigar 2. Machhli palan 3. Kisan 4. Naukri ya kuch aur 5.", "options": [{"key": "1", "hi": "Vyapar", "en": "Business"}, {"key": "2", "hi": "Bunkar", "en": "Artisan"}, {"key": "3", "hi": "Machhli palan", "en": "Fisher"}, {"key": "4", "hi": "Kisan", "en": "Farmer"}, {"key": "5", "hi": "Anya", "en": "Other"}], "answers": {"language": "en", "intent": "find_for_me"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT"], "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 10 for Other Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 30, "active_files": ["engine.py", "bank.py"]}, "dtmf:2|dtmf:2|dtmf:1": {"phase": "presenting", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 1 for Business Support, Demo Scheme 13 for Business Support, Demo Scheme 19 for Business Support, Demo Scheme 7 for Business Support.", "options": [], "answers": {"language": "en", "intent": "find_for_me", "persona": "business"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 4, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 13 for Business Support", "Demo Scheme 19 for Business Support", "Demo Scheme 7 for Business Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py"]}, "dtmf:2|dtmf:2|dtmf:1|silence30": {"phase": "ended", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 1 for Business Support, Demo Scheme 13 for Business Support, Demo Scheme 19 for Business Support, Demo Scheme 7 for Business Support.", "options": [], "answers": {"language": "en", "intent": "find_for_me", "persona": "business"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 4, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 13 for Business Support", "Demo Scheme 19 for Business Support", "Demo Scheme 7 for Business Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py"]}, "dtmf:2|dtmf:2|dtmf:2": {"phase": "presenting", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 14 for Artisan Support, Demo Scheme 2 for Artisan Support, Demo Scheme 20 for Artisan Support, Demo Scheme 8 for Artisan Support.", "options": [], "answers": {"language": "en", "intent": "find_for_me", "persona": "artisan"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 4, "candidate_names": ["Demo Scheme 14 for Artisan Support", "Demo Scheme 2 for Artisan Support", "Demo Scheme 20 for Artisan Support", "Demo Scheme 8 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py"]}, "dtmf:2|dtmf:2|dtmf:2|silence30": {"phase": "ended", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 14 for Artisan Support, Demo Scheme 2 for Artisan Support, Demo Scheme 20 for Artisan Support, Demo Scheme 8 for Artisan Support.", "options": [], "answers": {"language": "en", "intent": "find_for_me", "persona": "artisan"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 4, "candidate_names": ["Demo Scheme 14 for Artisan Support", "Demo Scheme 2 for Artisan Support", "Demo Scheme 20 for Artisan Support", "Demo Scheme 8 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py"]}, "dtmf:2|dtmf:2|dtmf:3": {"phase": "presenting", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 15 for Fisher Support, Demo Scheme 3 for Fisher Support, Demo Scheme 9 for Fisher Support.", "options": [], "answers": {"language": "en", "intent": "find_for_me", "persona": "fisher"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 3, "candidate_names": ["Demo Scheme 15 for Fisher Support", "Demo Scheme 3 for Fisher Support", "Demo Scheme 9 for Fisher Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py"]}, "dtmf:2|dtmf:2|dtmf:3|silence30": {"phase": "ended", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 15 for Fisher Support, Demo Scheme 3 for Fisher Support, Demo Scheme 9 for Fisher Support.", "options": [], "answers": {"language": "en", "intent": "find_for_me", "persona": "fisher"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 3, "candidate_names": ["Demo Scheme 15 for Fisher Support", "Demo Scheme 3 for Fisher Support", "Demo Scheme 9 for Fisher Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py"]}, "dtmf:2|dtmf:3": {"phase": "asking", "question_id": "Q003B_PERSONA", "prompt": "Aap kya karte hain? Vyapar ya dukaan 1. Bunkar ya karigar 2. Machhli palan 3. Kisan 4. Naukri ya kuch aur 5.", "options": [{"key": "1", "hi": "Vyapar", "en": "Business"}, {"key": "2", "hi": "Bunkar", "en": "Artisan"}, {"key": "3", "hi": "Machhli palan", "en": "Fisher"}, {"key": "4", "hi": "Kisan", "en": "Farmer"}, {"key": "5", "hi": "Anya", "en": "Other"}], "answers": {"language": "en", "intent": "by_purpose"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT"], "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 10 for Other Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py", "select.py"]}, "dtmf:2|dtmf:3|silence30": {"phase": "ended", "question_id": "Q003B_PERSONA", "prompt": "Aap kya karte hain? Vyapar ya dukaan 1. Bunkar ya karigar 2. Machhli palan 3. Kisan 4. Naukri ya kuch aur 5.", "options": [{"key": "1", "hi": "Vyapar", "en": "Business"}, {"key": "2", "hi": "Bunkar", "en": "Artisan"}, {"key": "3", "hi": "Machhli palan", "en": "Fisher"}, {"key": "4", "hi": "Kisan", "en": "Farmer"}, {"key": "5", "hi": "Anya", "en": "Other"}], "answers": {"language": "en", "intent": "by_purpose"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT"], "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 10 for Other Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 30, "active_files": ["engine.py", "bank.py"]}, "dtmf:2|dtmf:3|dtmf:1": {"phase": "presenting", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 1 for Business Support, Demo Scheme 13 for Business Support, Demo Scheme 19 for Business Support, Demo Scheme 7 for Business Support.", "options": [], "answers": {"language": "en", "intent": "by_purpose", "persona": "business"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 4, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 13 for Business Support", "Demo Scheme 19 for Business Support", "Demo Scheme 7 for Business Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py"]}, "dtmf:2|dtmf:3|dtmf:1|silence30": {"phase": "ended", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 1 for Business Support, Demo Scheme 13 for Business Support, Demo Scheme 19 for Business Support, Demo Scheme 7 for Business Support.", "options": [], "answers": {"language": "en", "intent": "by_purpose", "persona": "business"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 4, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 13 for Business Support", "Demo Scheme 19 for Business Support", "Demo Scheme 7 for Business Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py"]}, "dtmf:2|dtmf:3|dtmf:2": {"phase": "presenting", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 14 for Artisan Support, Demo Scheme 2 for Artisan Support, Demo Scheme 20 for Artisan Support, Demo Scheme 8 for Artisan Support.", "options": [], "answers": {"language": "en", "intent": "by_purpose", "persona": "artisan"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 4, "candidate_names": ["Demo Scheme 14 for Artisan Support", "Demo Scheme 2 for Artisan Support", "Demo Scheme 20 for Artisan Support", "Demo Scheme 8 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py"]}, "dtmf:2|dtmf:3|dtmf:2|silence30": {"phase": "ended", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 14 for Artisan Support, Demo Scheme 2 for Artisan Support, Demo Scheme 20 for Artisan Support, Demo Scheme 8 for Artisan Support.", "options": [], "answers": {"language": "en", "intent": "by_purpose", "persona": "artisan"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 4, "candidate_names": ["Demo Scheme 14 for Artisan Support", "Demo Scheme 2 for Artisan Support", "Demo Scheme 20 for Artisan Support", "Demo Scheme 8 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py"]}, "dtmf:2|dtmf:3|dtmf:3": {"phase": "presenting", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 15 for Fisher Support, Demo Scheme 3 for Fisher Support, Demo Scheme 9 for Fisher Support.", "options": [], "answers": {"language": "en", "intent": "by_purpose", "persona": "fisher"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 3, "candidate_names": ["Demo Scheme 15 for Fisher Support", "Demo Scheme 3 for Fisher Support", "Demo Scheme 9 for Fisher Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py"]}, "dtmf:2|dtmf:3|dtmf:3|silence30": {"phase": "ended", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 15 for Fisher Support, Demo Scheme 3 for Fisher Support, Demo Scheme 9 for Fisher Support.", "options": [], "answers": {"language": "en", "intent": "by_purpose", "persona": "fisher"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 3, "candidate_names": ["Demo Scheme 15 for Fisher Support", "Demo Scheme 3 for Fisher Support", "Demo Scheme 9 for Fisher Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py"]}, "dtmf:3": {"phase": "asking", "question_id": "Q002_INTENT", "prompt": "Kisi yojna ka naam pata hai to 1. Apne liye yojna dhoondhni hai to 2. Kisi kaam ke liye madad chahiye to 3.", "options": [{"key": "1", "hi": "Naam pata hai", "en": "I know the name"}, {"key": "2", "hi": "Meri yojna dhoondho", "en": "Find schemes for me"}, {"key": "3", "hi": "Kaam ke hisaab se", "en": "By purpose"}], "answers": {"language": "hinglish"}, "asked": ["Q001_LANGUAGE"], "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 10 for Other Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py", "select.py"]}, "dtmf:3|silence30": {"phase": "ended", "question_id": "Q002_INTENT", "prompt": "Kisi yojna ka naam pata hai to 1. Apne liye yojna dhoondhni hai to 2. Kisi kaam ke liye madad chahiye to 3.", "options": [{"key": "1", "hi": "Naam pata hai", "en": "I know the name"}, {"key": "2", "hi": "Meri yojna dhoondho", "en": "Find schemes for me"}, {"key": "3", "hi": "Kaam ke hisaab se", "en": "By purpose"}], "answers": {"language": "hinglish"}, "asked": ["Q001_LANGUAGE"], "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 10 for Other Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 30, "active_files": ["engine.py", "bank.py"]}, "dtmf:3|dtmf:1": {"phase": "asking", "question_id": "Q100_SCHEME_NAME", "prompt": "Yojna ka naam boliye.", "options": [], "answers": {"language": "hinglish", "intent": "known_scheme"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT"], "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 10 for Other Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py", "select.py"]}, "dtmf:3|dtmf:1|silence30": {"phase": "ended", "question_id": "Q100_SCHEME_NAME", "prompt": "Yojna ka naam boliye.", "options": [], "answers": {"language": "hinglish", "intent": "known_scheme"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT"], "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 10 for Other Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 30, "active_files": ["engine.py", "bank.py"]}, "dtmf:3|dtmf:2": {"phase": "asking", "question_id": "Q003B_PERSONA", "prompt": "Aap kya karte hain? Vyapar ya dukaan 1. Bunkar ya karigar 2. Machhli palan 3. Kisan 4. Naukri ya kuch aur 5.", "options": [{"key": "1", "hi": "Vyapar", "en": "Business"}, {"key": "2", "hi": "Bunkar", "en": "Artisan"}, {"key": "3", "hi": "Machhli palan", "en": "Fisher"}, {"key": "4", "hi": "Kisan", "en": "Farmer"}, {"key": "5", "hi": "Anya", "en": "Other"}], "answers": {"language": "hinglish", "intent": "find_for_me"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT"], "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 10 for Other Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py", "select.py"]}, "dtmf:3|dtmf:2|silence30": {"phase": "ended", "question_id": "Q003B_PERSONA", "prompt": "Aap kya karte hain? Vyapar ya dukaan 1. Bunkar ya karigar 2. Machhli palan 3. Kisan 4. Naukri ya kuch aur 5.", "options": [{"key": "1", "hi": "Vyapar", "en": "Business"}, {"key": "2", "hi": "Bunkar", "en": "Artisan"}, {"key": "3", "hi": "Machhli palan", "en": "Fisher"}, {"key": "4", "hi": "Kisan", "en": "Farmer"}, {"key": "5", "hi": "Anya", "en": "Other"}], "answers": {"language": "hinglish", "intent": "find_for_me"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT"], "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 10 for Other Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 30, "active_files": ["engine.py", "bank.py"]}, "dtmf:3|dtmf:2|dtmf:1": {"phase": "presenting", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 1 for Business Support, Demo Scheme 13 for Business Support, Demo Scheme 19 for Business Support, Demo Scheme 7 for Business Support.", "options": [], "answers": {"language": "hinglish", "intent": "find_for_me", "persona": "business"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 4, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 13 for Business Support", "Demo Scheme 19 for Business Support", "Demo Scheme 7 for Business Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py"]}, "dtmf:3|dtmf:2|dtmf:1|silence30": {"phase": "ended", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 1 for Business Support, Demo Scheme 13 for Business Support, Demo Scheme 19 for Business Support, Demo Scheme 7 for Business Support.", "options": [], "answers": {"language": "hinglish", "intent": "find_for_me", "persona": "business"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 4, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 13 for Business Support", "Demo Scheme 19 for Business Support", "Demo Scheme 7 for Business Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py"]}, "dtmf:3|dtmf:2|dtmf:2": {"phase": "presenting", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 14 for Artisan Support, Demo Scheme 2 for Artisan Support, Demo Scheme 20 for Artisan Support, Demo Scheme 8 for Artisan Support.", "options": [], "answers": {"language": "hinglish", "intent": "find_for_me", "persona": "artisan"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 4, "candidate_names": ["Demo Scheme 14 for Artisan Support", "Demo Scheme 2 for Artisan Support", "Demo Scheme 20 for Artisan Support", "Demo Scheme 8 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py"]}, "dtmf:3|dtmf:2|dtmf:2|silence30": {"phase": "ended", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 14 for Artisan Support, Demo Scheme 2 for Artisan Support, Demo Scheme 20 for Artisan Support, Demo Scheme 8 for Artisan Support.", "options": [], "answers": {"language": "hinglish", "intent": "find_for_me", "persona": "artisan"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 4, "candidate_names": ["Demo Scheme 14 for Artisan Support", "Demo Scheme 2 for Artisan Support", "Demo Scheme 20 for Artisan Support", "Demo Scheme 8 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py"]}, "dtmf:3|dtmf:2|dtmf:3": {"phase": "presenting", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 15 for Fisher Support, Demo Scheme 3 for Fisher Support, Demo Scheme 9 for Fisher Support.", "options": [], "answers": {"language": "hinglish", "intent": "find_for_me", "persona": "fisher"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 3, "candidate_names": ["Demo Scheme 15 for Fisher Support", "Demo Scheme 3 for Fisher Support", "Demo Scheme 9 for Fisher Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py"]}, "dtmf:3|dtmf:2|dtmf:3|silence30": {"phase": "ended", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 15 for Fisher Support, Demo Scheme 3 for Fisher Support, Demo Scheme 9 for Fisher Support.", "options": [], "answers": {"language": "hinglish", "intent": "find_for_me", "persona": "fisher"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 3, "candidate_names": ["Demo Scheme 15 for Fisher Support", "Demo Scheme 3 for Fisher Support", "Demo Scheme 9 for Fisher Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py"]}, "dtmf:3|dtmf:3": {"phase": "asking", "question_id": "Q003B_PERSONA", "prompt": "Aap kya karte hain? Vyapar ya dukaan 1. Bunkar ya karigar 2. Machhli palan 3. Kisan 4. Naukri ya kuch aur 5.", "options": [{"key": "1", "hi": "Vyapar", "en": "Business"}, {"key": "2", "hi": "Bunkar", "en": "Artisan"}, {"key": "3", "hi": "Machhli palan", "en": "Fisher"}, {"key": "4", "hi": "Kisan", "en": "Farmer"}, {"key": "5", "hi": "Anya", "en": "Other"}], "answers": {"language": "hinglish", "intent": "by_purpose"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT"], "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 10 for Other Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py", "select.py"]}, "dtmf:3|dtmf:3|silence30": {"phase": "ended", "question_id": "Q003B_PERSONA", "prompt": "Aap kya karte hain? Vyapar ya dukaan 1. Bunkar ya karigar 2. Machhli palan 3. Kisan 4. Naukri ya kuch aur 5.", "options": [{"key": "1", "hi": "Vyapar", "en": "Business"}, {"key": "2", "hi": "Bunkar", "en": "Artisan"}, {"key": "3", "hi": "Machhli palan", "en": "Fisher"}, {"key": "4", "hi": "Kisan", "en": "Farmer"}, {"key": "5", "hi": "Anya", "en": "Other"}], "answers": {"language": "hinglish", "intent": "by_purpose"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT"], "candidate_count": 20, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 10 for Other Support", "Demo Scheme 11 for Farmer Support", "Demo Scheme 12 for Other Support", "Demo Scheme 13 for Business Support", "Demo Scheme 14 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 30, "active_files": ["engine.py", "bank.py"]}, "dtmf:3|dtmf:3|dtmf:1": {"phase": "presenting", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 1 for Business Support, Demo Scheme 13 for Business Support, Demo Scheme 19 for Business Support, Demo Scheme 7 for Business Support.", "options": [], "answers": {"language": "hinglish", "intent": "by_purpose", "persona": "business"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 4, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 13 for Business Support", "Demo Scheme 19 for Business Support", "Demo Scheme 7 for Business Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py"]}, "dtmf:3|dtmf:3|dtmf:1|silence30": {"phase": "ended", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 1 for Business Support, Demo Scheme 13 for Business Support, Demo Scheme 19 for Business Support, Demo Scheme 7 for Business Support.", "options": [], "answers": {"language": "hinglish", "intent": "by_purpose", "persona": "business"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 4, "candidate_names": ["Demo Scheme 1 for Business Support", "Demo Scheme 13 for Business Support", "Demo Scheme 19 for Business Support", "Demo Scheme 7 for Business Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py"]}, "dtmf:3|dtmf:3|dtmf:2": {"phase": "presenting", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 14 for Artisan Support, Demo Scheme 2 for Artisan Support, Demo Scheme 20 for Artisan Support, Demo Scheme 8 for Artisan Support.", "options": [], "answers": {"language": "hinglish", "intent": "by_purpose", "persona": "artisan"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 4, "candidate_names": ["Demo Scheme 14 for Artisan Support", "Demo Scheme 2 for Artisan Support", "Demo Scheme 20 for Artisan Support", "Demo Scheme 8 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py"]}, "dtmf:3|dtmf:3|dtmf:2|silence30": {"phase": "ended", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 14 for Artisan Support, Demo Scheme 2 for Artisan Support, Demo Scheme 20 for Artisan Support, Demo Scheme 8 for Artisan Support.", "options": [], "answers": {"language": "hinglish", "intent": "by_purpose", "persona": "artisan"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 4, "candidate_names": ["Demo Scheme 14 for Artisan Support", "Demo Scheme 2 for Artisan Support", "Demo Scheme 20 for Artisan Support", "Demo Scheme 8 for Artisan Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py"]}, "dtmf:3|dtmf:3|dtmf:3": {"phase": "presenting", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 15 for Fisher Support, Demo Scheme 3 for Fisher Support, Demo Scheme 9 for Fisher Support.", "options": [], "answers": {"language": "hinglish", "intent": "by_purpose", "persona": "fisher"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 3, "candidate_names": ["Demo Scheme 15 for Fisher Support", "Demo Scheme 3 for Fisher Support", "Demo Scheme 9 for Fisher Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py", "narrow.py"]}, "dtmf:3|dtmf:3|dtmf:3|silence30": {"phase": "ended", "question_id": null, "prompt": "Yeh yojnaayein mil sakti hain: Demo Scheme 15 for Fisher Support, Demo Scheme 3 for Fisher Support, Demo Scheme 9 for Fisher Support.", "options": [], "answers": {"language": "hinglish", "intent": "by_purpose", "persona": "fisher"}, "asked": ["Q001_LANGUAGE", "Q002_INTENT", "Q003B_PERSONA"], "candidate_count": 3, "candidate_names": ["Demo Scheme 15 for Fisher Support", "Demo Scheme 3 for Fisher Support", "Demo Scheme 9 for Fisher Support"], "invalid_count": 0, "speech_attempts": 0, "silence_elapsed": 0, "active_files": ["engine.py", "bank.py"]}}, "edges": {"": {"undo": "", "restart": "", "silence30": "silence30", "dtmf:1": "silence30", "dtmf:2": "dtmf:2", "dtmf:3": "dtmf:3"}, "silence30": {"undo": "", "restart": "", "silence30": "silence30|silence30", "dtmf:1": "silence30|dtmf:1", "dtmf:2": "silence30|dtmf:2", "dtmf:3": "silence30|dtmf:3"}, "silence30|silence30": {"undo": "silence30|silence30", "restart": "silence30|silence30", "silence30": "silence30|silence30"}, "silence30|dtmf:1": {"undo": "silence30", "restart": "", "silence30": "silence30|dtmf:1|silence30"}, "silence30|dtmf:1|silence30": {"undo": "silence30|dtmf:1|silence30", "restart": "silence30|dtmf:1|silence30", "silence30": "silence30|dtmf:1|silence30"}, "silence30|dtmf:2": {"undo": "silence30", "restart": "", "silence30": "silence30|dtmf:2|silence30", "dtmf:1": "silence30|dtmf:2|dtmf:1", "dtmf:2": "silence30|dtmf:2|dtmf:2", "dtmf:3": "silence30|dtmf:2|dtmf:3"}, "silence30|dtmf:2|silence30": {"undo": "silence30|dtmf:2|silence30", "restart": "silence30|dtmf:2|silence30", "silence30": "silence30|dtmf:2|silence30"}, "silence30|dtmf:2|dtmf:1": {"undo": "silence30|dtmf:2", "restart": "", "silence30": "silence30|dtmf:2|dtmf:1|silence30"}, "silence30|dtmf:2|dtmf:1|silence30": {"undo": "silence30|dtmf:2|dtmf:1|silence30", "restart": "silence30|dtmf:2|dtmf:1|silence30", "silence30": "silence30|dtmf:2|dtmf:1|silence30"}, "silence30|dtmf:2|dtmf:2": {"undo": "silence30|dtmf:2", "restart": "", "silence30": "silence30|dtmf:2|dtmf:2|silence30"}, "silence30|dtmf:2|dtmf:2|silence30": {"undo": "silence30|dtmf:2|dtmf:2|silence30", "restart": "silence30|dtmf:2|dtmf:2|silence30", "silence30": "silence30|dtmf:2|dtmf:2|silence30"}, "silence30|dtmf:2|dtmf:3": {"undo": "silence30|dtmf:2", "restart": "", "silence30": "silence30|dtmf:2|dtmf:3|silence30"}, "silence30|dtmf:2|dtmf:3|silence30": {"undo": "silence30|dtmf:2|dtmf:3|silence30", "restart": "silence30|dtmf:2|dtmf:3|silence30", "silence30": "silence30|dtmf:2|dtmf:3|silence30"}, "silence30|dtmf:3": {"undo": "silence30", "restart": "", "silence30": "silence30|dtmf:3|silence30", "dtmf:1": "silence30|dtmf:3|dtmf:1", "dtmf:2": "silence30|dtmf:3|dtmf:2", "dtmf:3": "silence30|dtmf:3|dtmf:3"}, "silence30|dtmf:3|silence30": {"undo": "silence30|dtmf:3|silence30", "restart": "silence30|dtmf:3|silence30", "silence30": "silence30|dtmf:3|silence30"}, "silence30|dtmf:3|dtmf:1": {"undo": "silence30|dtmf:3", "restart": "", "silence30": "silence30|dtmf:3|dtmf:1|silence30"}, "silence30|dtmf:3|dtmf:1|silence30": {"undo": "silence30|dtmf:3|dtmf:1|silence30", "restart": "silence30|dtmf:3|dtmf:1|silence30", "silence30": "silence30|dtmf:3|dtmf:1|silence30"}, "silence30|dtmf:3|dtmf:2": {"undo": "silence30|dtmf:3", "restart": "", "silence30": "silence30|dtmf:3|dtmf:2|silence30"}, "silence30|dtmf:3|dtmf:2|silence30": {"undo": "silence30|dtmf:3|dtmf:2|silence30", "restart": "silence30|dtmf:3|dtmf:2|silence30", "silence30": "silence30|dtmf:3|dtmf:2|silence30"}, "silence30|dtmf:3|dtmf:3": {"undo": "silence30|dtmf:3", "restart": "", "silence30": "silence30|dtmf:3|dtmf:3|silence30"}, "silence30|dtmf:3|dtmf:3|silence30": {"undo": "silence30|dtmf:3|dtmf:3|silence30", "restart": "silence30|dtmf:3|dtmf:3|silence30", "silence30": "silence30|dtmf:3|dtmf:3|silence30"}, "dtmf:2": {"undo": "", "restart": "", "silence30": "dtmf:2|silence30", "dtmf:1": "dtmf:2|dtmf:1", "dtmf:2": "dtmf:2|dtmf:2", "dtmf:3": "dtmf:2|dtmf:3"}, "dtmf:2|silence30": {"undo": "dtmf:2|silence30", "restart": "dtmf:2|silence30", "silence30": "dtmf:2|silence30"}, "dtmf:2|dtmf:1": {"undo": "dtmf:2", "restart": "", "silence30": "dtmf:2|dtmf:1|silence30"}, "dtmf:2|dtmf:1|silence30": {"undo": "dtmf:2|dtmf:1|silence30", "restart": "dtmf:2|dtmf:1|silence30", "silence30": "dtmf:2|dtmf:1|silence30"}, "dtmf:2|dtmf:2": {"undo": "dtmf:2", "restart": "", "silence30": "dtmf:2|dtmf:2|silence30", "dtmf:1": "dtmf:2|dtmf:2|dtmf:1", "dtmf:2": "dtmf:2|dtmf:2|dtmf:2", "dtmf:3": "dtmf:2|dtmf:2|dtmf:3"}, "dtmf:2|dtmf:2|silence30": {"undo": "dtmf:2|dtmf:2|silence30", "restart": "dtmf:2|dtmf:2|silence30", "silence30": "dtmf:2|dtmf:2|silence30"}, "dtmf:2|dtmf:2|dtmf:1": {"undo": "dtmf:2|dtmf:2", "restart": "", "silence30": "dtmf:2|dtmf:2|dtmf:1|silence30"}, "dtmf:2|dtmf:2|dtmf:1|silence30": {"undo": "dtmf:2|dtmf:2|dtmf:1|silence30", "restart": "dtmf:2|dtmf:2|dtmf:1|silence30", "silence30": "dtmf:2|dtmf:2|dtmf:1|silence30"}, "dtmf:2|dtmf:2|dtmf:2": {"undo": "dtmf:2|dtmf:2", "restart": "", "silence30": "dtmf:2|dtmf:2|dtmf:2|silence30"}, "dtmf:2|dtmf:2|dtmf:2|silence30": {"undo": "dtmf:2|dtmf:2|dtmf:2|silence30", "restart": "dtmf:2|dtmf:2|dtmf:2|silence30", "silence30": "dtmf:2|dtmf:2|dtmf:2|silence30"}, "dtmf:2|dtmf:2|dtmf:3": {"undo": "dtmf:2|dtmf:2", "restart": "", "silence30": "dtmf:2|dtmf:2|dtmf:3|silence30"}, "dtmf:2|dtmf:2|dtmf:3|silence30": {"undo": "dtmf:2|dtmf:2|dtmf:3|silence30", "restart": "dtmf:2|dtmf:2|dtmf:3|silence30", "silence30": "dtmf:2|dtmf:2|dtmf:3|silence30"}, "dtmf:2|dtmf:3": {"undo": "dtmf:2", "restart": "", "silence30": "dtmf:2|dtmf:3|silence30", "dtmf:1": "dtmf:2|dtmf:3|dtmf:1", "dtmf:2": "dtmf:2|dtmf:3|dtmf:2", "dtmf:3": "dtmf:2|dtmf:3|dtmf:3"}, "dtmf:2|dtmf:3|silence30": {"undo": "dtmf:2|dtmf:3|silence30", "restart": "dtmf:2|dtmf:3|silence30", "silence30": "dtmf:2|dtmf:3|silence30"}, "dtmf:2|dtmf:3|dtmf:1": {"undo": "dtmf:2|dtmf:3", "restart": "", "silence30": "dtmf:2|dtmf:3|dtmf:1|silence30"}, "dtmf:2|dtmf:3|dtmf:1|silence30": {"undo": "dtmf:2|dtmf:3|dtmf:1|silence30", "restart": "dtmf:2|dtmf:3|dtmf:1|silence30", "silence30": "dtmf:2|dtmf:3|dtmf:1|silence30"}, "dtmf:2|dtmf:3|dtmf:2": {"undo": "dtmf:2|dtmf:3", "restart": "", "silence30": "dtmf:2|dtmf:3|dtmf:2|silence30"}, "dtmf:2|dtmf:3|dtmf:2|silence30": {"undo": "dtmf:2|dtmf:3|dtmf:2|silence30", "restart": "dtmf:2|dtmf:3|dtmf:2|silence30", "silence30": "dtmf:2|dtmf:3|dtmf:2|silence30"}, "dtmf:2|dtmf:3|dtmf:3": {"undo": "dtmf:2|dtmf:3", "restart": "", "silence30": "dtmf:2|dtmf:3|dtmf:3|silence30"}, "dtmf:2|dtmf:3|dtmf:3|silence30": {"undo": "dtmf:2|dtmf:3|dtmf:3|silence30", "restart": "dtmf:2|dtmf:3|dtmf:3|silence30", "silence30": "dtmf:2|dtmf:3|dtmf:3|silence30"}, "dtmf:3": {"undo": "", "restart": "", "silence30": "dtmf:3|silence30", "dtmf:1": "dtmf:3|dtmf:1", "dtmf:2": "dtmf:3|dtmf:2", "dtmf:3": "dtmf:3|dtmf:3"}, "dtmf:3|silence30": {"undo": "dtmf:3|silence30", "restart": "dtmf:3|silence30", "silence30": "dtmf:3|silence30"}, "dtmf:3|dtmf:1": {"undo": "dtmf:3", "restart": "", "silence30": "dtmf:3|dtmf:1|silence30"}, "dtmf:3|dtmf:1|silence30": {"undo": "dtmf:3|dtmf:1|silence30", "restart": "dtmf:3|dtmf:1|silence30", "silence30": "dtmf:3|dtmf:1|silence30"}, "dtmf:3|dtmf:2": {"undo": "dtmf:3", "restart": "", "silence30": "dtmf:3|dtmf:2|silence30", "dtmf:1": "dtmf:3|dtmf:2|dtmf:1", "dtmf:2": "dtmf:3|dtmf:2|dtmf:2", "dtmf:3": "dtmf:3|dtmf:2|dtmf:3"}, "dtmf:3|dtmf:2|silence30": {"undo": "dtmf:3|dtmf:2|silence30", "restart": "dtmf:3|dtmf:2|silence30", "silence30": "dtmf:3|dtmf:2|silence30"}, "dtmf:3|dtmf:2|dtmf:1": {"undo": "dtmf:3|dtmf:2", "restart": "", "silence30": "dtmf:3|dtmf:2|dtmf:1|silence30"}, "dtmf:3|dtmf:2|dtmf:1|silence30": {"undo": "dtmf:3|dtmf:2|dtmf:1|silence30", "restart": "dtmf:3|dtmf:2|dtmf:1|silence30", "silence30": "dtmf:3|dtmf:2|dtmf:1|silence30"}, "dtmf:3|dtmf:2|dtmf:2": {"undo": "dtmf:3|dtmf:2", "restart": "", "silence30": "dtmf:3|dtmf:2|dtmf:2|silence30"}, "dtmf:3|dtmf:2|dtmf:2|silence30": {"undo": "dtmf:3|dtmf:2|dtmf:2|silence30", "restart": "dtmf:3|dtmf:2|dtmf:2|silence30", "silence30": "dtmf:3|dtmf:2|dtmf:2|silence30"}, "dtmf:3|dtmf:2|dtmf:3": {"undo": "dtmf:3|dtmf:2", "restart": "", "silence30": "dtmf:3|dtmf:2|dtmf:3|silence30"}, "dtmf:3|dtmf:2|dtmf:3|silence30": {"undo": "dtmf:3|dtmf:2|dtmf:3|silence30", "restart": "dtmf:3|dtmf:2|dtmf:3|silence30", "silence30": "dtmf:3|dtmf:2|dtmf:3|silence30"}, "dtmf:3|dtmf:3": {"undo": "dtmf:3", "restart": "", "silence30": "dtmf:3|dtmf:3|silence30", "dtmf:1": "dtmf:3|dtmf:3|dtmf:1", "dtmf:2": "dtmf:3|dtmf:3|dtmf:2", "dtmf:3": "dtmf:3|dtmf:3|dtmf:3"}, "dtmf:3|dtmf:3|silence30": {"undo": "dtmf:3|dtmf:3|silence30", "restart": "dtmf:3|dtmf:3|silence30", "silence30": "dtmf:3|dtmf:3|silence30"}, "dtmf:3|dtmf:3|dtmf:1": {"undo": "dtmf:3|dtmf:3", "restart": "", "silence30": "dtmf:3|dtmf:3|dtmf:1|silence30"}, "dtmf:3|dtmf:3|dtmf:1|silence30": {"undo": "dtmf:3|dtmf:3|dtmf:1|silence30", "restart": "dtmf:3|dtmf:3|dtmf:1|silence30", "silence30": "dtmf:3|dtmf:3|dtmf:1|silence30"}, "dtmf:3|dtmf:3|dtmf:2": {"undo": "dtmf:3|dtmf:3", "restart": "", "silence30": "dtmf:3|dtmf:3|dtmf:2|silence30"}, "dtmf:3|dtmf:3|dtmf:2|silence30": {"undo": "dtmf:3|dtmf:3|dtmf:2|silence30", "restart": "dtmf:3|dtmf:3|dtmf:2|silence30", "silence30": "dtmf:3|dtmf:3|dtmf:2|silence30"}, "dtmf:3|dtmf:3|dtmf:3": {"undo": "dtmf:3|dtmf:3", "restart": "", "silence30": "dtmf:3|dtmf:3|dtmf:3|silence30"}, "dtmf:3|dtmf:3|dtmf:3|silence30": {"undo": "dtmf:3|dtmf:3|dtmf:3|silence30", "restart": "dtmf:3|dtmf:3|dtmf:3|silence30", "silence30": "dtmf:3|dtmf:3|dtmf:3|silence30"}}, "root": ""};
+const NODES = TRACE.nodes;
+const EDGES = TRACE.edges;
+const ROOT = TRACE.root;
+
+const DIAGRAM_DEFS = [
+  { id: "question_bank.yaml", label: "question_bank.yaml", desc: "47 questions, the DAG of what can be asked", status: "data" },
+  { id: "haqdaar.db", label: "haqdaar.db (SQLite)", desc: "20 demo schemes + eligibility rules", status: "data" },
+  { id: "bank.py", label: "bank.py", desc: "loads the question bank, decides what's askable", status: "done" },
+  { id: "narrow.py", label: "narrow.py", desc: "filters schemes against answers so far", status: "done" },
+  { id: "select.py", label: "select.py", desc: "picks the single best next question", status: "done" },
+  { id: "engine.py", label: "engine.py — THE HEART", desc: "turns a keypress into state + what to say", status: "done" },
+  { id: "menu.py", label: "menu.py", desc: "browse by category / dial a scheme directly", status: "future" },
+  { id: "api.py", label: "api.py", desc: "exposes the engine over HTTP", status: "future" },
+  { id: "sim.py / Twilio", label: "sim.py or Twilio", desc: "the actual phone call, real or simulated", status: "future" },
+];
+
+function renderDiagram(activeFiles) {
+  const el = document.getElementById('diagram');
+  el.innerHTML = '';
+  DIAGRAM_DEFS.forEach((def, i) => {
+    if (i > 0) {
+      const wire = document.createElement('div');
+      wire.className = 'dwire' + (activeFiles.includes(def.id) && def.status !== 'future' ? ' active' : '');
+      el.appendChild(wire);
+    }
+    const node = document.createElement('div');
+    const isActive = activeFiles.includes(def.id) && def.status !== 'future';
+    node.className = 'dnode' + (isActive ? ' active' : '') + (def.status === 'future' ? ' future' : '');
+    const statusLabel = def.status === 'future' ? 'not built' : (def.status === 'data' ? 'data' : (isActive ? 'active now' : 'idle'));
+    node.innerHTML = `
+      <span class="dnode-name">${def.label}<span class="dnode-status">${statusLabel}</span></span>
+      <div class="dnode-desc">${def.desc}</div>
+    `;
+    el.appendChild(node);
+  });
+}
+
+let currentPath = ROOT;
+let history = [];
+
+function render() {
+  const node = NODES[currentPath];
+  const activeFiles = node.active_files || [];
+  renderDiagram(activeFiles);
+
+  const transcript = document.getElementById('transcript');
+  transcript.innerHTML = '';
+
+  history.forEach((h, i) => {
+    const div = document.createElement('div');
+    const isGlobal = h.label === 'undo' || h.label === 'restart' || h.label === 'silence30' || h.label === 'repeat';
+    div.className = 'turn' + (isGlobal ? ' is-global' : '');
+    let answerHtml = '';
+    if (h.label.startsWith('dtmf:')) {
+      const key = h.label.split(':')[1];
+      answerHtml = `<div class="turn-answer">Pressed <span class="mono">${key}</span></div>`;
+    } else if (h.label === 'undo') {
+      answerHtml = `<div class="turn-answer is-global">Pressed <span class="mono">#</span> — undo last answer</div>`;
+    } else if (h.label === 'restart') {
+      answerHtml = `<div class="turn-answer is-global">Pressed <span class="mono">0</span> — restart, answers wiped</div>`;
+    } else if (h.label === 'silence30') {
+      answerHtml = `<div class="turn-answer is-global">30 seconds of silence</div>`;
+    } else if (h.label === 'repeat') {
+      answerHtml = `<div class="turn-answer is-global">Pressed <span class="mono">*</span> — repeat last</div>`;
+    }
+    const fileTags = (h.files || []).map(f => `<span class="turn-file-tag">${f}</span>`).join('');
+    div.innerHTML = `
+      <div class="turn-index">Turn ${i + 1}</div>
+      <div class="turn-qid mono">${h.fromQid || ''}</div>
+      <p class="turn-prompt">${h.fromPrompt || ''}</p>
+      ${answerHtml}
+      <div class="turn-meta"><span class="mono">${h.beforeCount}</span> candidates → <span class="mono">${h.afterCount}</span> candidates</div>
+      <div class="turn-files">${fileTags}</div>
+    `;
+    transcript.appendChild(div);
+  });
+
+  if (history.length === 0) {
+    const div = document.createElement('div');
+    div.className = 'turn is-current';
+    div.innerHTML = `
+      <div class="turn-index">Turn 1 · call just connected</div>
+      <div class="turn-qid mono">${node.question_id || ''}</div>
+      <p class="turn-prompt">${node.prompt || ''}</p>
+    `;
+    transcript.appendChild(div);
+  } else {
+    transcript.lastElementChild.classList.add('is-current');
+  }
+
+  const strip = document.getElementById('statusStrip');
+  strip.innerHTML = `
+    <span class="status-chip phase-${node.phase}">phase: <span class="v">${node.phase}</span></span>
+    <span class="status-chip">asked: <span class="v mono">${node.asked.length}</span></span>
+    <span class="status-chip">invalid: <span class="v mono">${node.invalid_count}</span></span>
+    <span class="status-chip">silence: <span class="v mono">${node.silence_elapsed}s</span></span>
+  `;
+
+  document.getElementById('countNumber').textContent = node.candidate_count;
+  document.getElementById('countCaption').textContent =
+    history.length === 0 ? 'Nobody eliminated yet.' : `After ${history.length} step${history.length > 1 ? 's' : ''}.`;
+
+  const list = document.getElementById('candidateList');
+  list.innerHTML = '';
+  node.candidate_names.forEach(name => {
+    const li = document.createElement('li');
+    li.textContent = name;
+    list.appendChild(li);
+  });
+  if (node.candidate_count > node.candidate_names.length) {
+    const li = document.createElement('li');
+    li.className = 'more';
+    li.textContent = `+ ${node.candidate_count - node.candidate_names.length} more`;
+    list.appendChild(li);
+  }
+
+  const currentQBlock = document.getElementById('currentQBlock');
+  const endCard = document.getElementById('endCard');
+  const edgesHere = EDGES[currentPath] || {};
+
+  if (node.phase === 'asking' && node.question_id) {
+    currentQBlock.style.display = '';
+    endCard.style.display = 'none';
+    document.getElementById('currentQId').textContent = node.question_id;
+    document.getElementById('currentQPrompt').textContent = node.prompt || '';
+
+    const keypad = document.getElementById('keypad');
+    keypad.innerHTML = '';
+    [1,2,3,4,5,6,7,8,9].forEach(slotKey => {
+      const opt = node.options.find(o => o.key === String(slotKey));
+      const btn = document.createElement('button');
+      if (!opt) { btn.className = 'key empty'; keypad.appendChild(btn); return; }
+      const edgeKey = `dtmf:${opt.key}`;
+      const hasChild = edgesHere[edgeKey] && NODES[edgesHere[edgeKey]];
+      btn.className = 'key' + (hasChild ? '' : ' invalid-demo');
+      btn.innerHTML = `<span class="key-digit">${opt.key}</span><span class="key-label">${opt.hi || opt.en}</span>`;
+      btn.disabled = !hasChild;
+      btn.addEventListener('click', () => go(edgeKey));
+      keypad.appendChild(btn);
+    });
+  } else {
+    currentQBlock.style.display = 'none';
+    endCard.style.display = '';
+    endCard.classList.toggle('is-ended', node.phase === 'ended');
+    if (node.phase === 'presenting') {
+      endCard.innerHTML = `<strong>Presenting results.</strong> ${node.candidate_count} scheme${node.candidate_count === 1 ? '' : 's'} shown. This is where menu.py (Step 6, not built yet) would let the caller browse or dial a code directly.`;
+    } else {
+      endCard.innerHTML = `<strong>Call ended.</strong> Press "New call" to start over.`;
+    }
+  }
+}
+
+function go(edgeKey) {
+  const edgesHere = EDGES[currentPath] || {};
+  const childPath = edgesHere[edgeKey];
+  if (!childPath || !NODES[childPath]) return;
+  const fromNode = NODES[currentPath];
+  const toNode = NODES[childPath];
+  history.push({
+    label: edgeKey,
+    fromQid: fromNode.question_id,
+    fromPrompt: fromNode.prompt,
+    beforeCount: fromNode.candidate_count,
+    afterCount: toNode.candidate_count,
+    files: toNode.active_files,
+  });
+  currentPath = childPath;
+  render();
+}
+
+document.getElementById('btnHash').addEventListener('click', () => go('undo'));
+document.getElementById('btnZero').addEventListener('click', () => go('restart'));
+document.getElementById('btnStar').addEventListener('click', () => {
+  const node = NODES[currentPath];
+  history.push({
+    label: 'repeat',
+    fromQid: node.question_id,
+    fromPrompt: '(repeated) ' + (node.prompt || ''),
+    beforeCount: node.candidate_count,
+    afterCount: node.candidate_count,
+    files: ['engine.py'],
+  });
+  render();
+});
+document.getElementById('silenceBtn').addEventListener('click', () => go('silence30'));
+document.getElementById('restartBtn').addEventListener('click', () => {
+  currentPath = ROOT;
+  history = [];
+  render();
+});
+
+render();
+</script>
