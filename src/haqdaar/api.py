@@ -5,10 +5,16 @@ stays in engine.py. When the Twilio adapter arrives later (Step 11), it
 becomes a second client of these same endpoints and nothing in the core
 changes.
 
-Sessions live in an in-memory dict keyed by call_id. Caller answers are
-NEVER written to disk (PRD M13) - state lives only in this process's
-memory, confirmed by construction: nothing in this file opens a file for
-writing, and CallState itself has no serialize-to-disk path.
+Sessions live in an in-memory dict keyed by call_id, and nothing in THIS
+file writes to disk - CallState has no serialize-to-disk path.
+
+PRD M13 ("caller answers are NEVER written to disk") no longer holds for
+the Twilio path, and this docstring used to claim otherwise. calllog.py
+persists a per-call transcript (both sides, plus engine state and stage
+timings) under calls/, because a live call that misbehaves is otherwise
+undiagnosable once it ends. The override is deliberate and scoped:
+transcripts only, never audio, and calls/ is gitignored. See calllog.py's
+own docstring and PRD.md.
 """
 from __future__ import annotations
 

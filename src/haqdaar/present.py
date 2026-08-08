@@ -158,11 +158,35 @@ def present_many(
     answers: dict[str, Any],
     llm_enabled: bool = True,
     llm_caller: PresentCaller | None = None,
+    budget_s: float | None = None,
 ) -> list[Presentation]:
     """Presents each candidate independently - one candidate's LLM failure
-    never affects another's presentation (no shared budget/state beyond
-    each call's own timeout)."""
-    return [
-        present_one(c, benefits_by_slug.get(c.slug, ""), answers, llm_enabled=llm_enabled, llm_caller=llm_caller)
-        for c in candidates
-    ]
+    never affects another's presentation.
+
+    WALL-CLOCK BUDGET (`budget_s`, default config.PRESENT_BUDGET_MS): this
+    runs inside a Twilio webhook, and Twilio hangs up if we don't answer
+    within 15 seconds. Five candidates x a 3s LLM timeout each is 15s of
+    LLM time alone, before any TTS - i.e. the results turn, the one the
+    whole call builds up to, was the single most likely turn to drop the
+    call. Once the budget is spent, the remaining candidates skip the LLM
+    entirely and use the deterministic fallback, which is always safe (it
+    reads name + first benefit sentence straight from the DB).
+
+    The budget is checked BEFORE each call rather than enforced across
+    them, so worst case is budget + one LLM timeout - bounded and well
+    inside Twilio's limit, without needing to cancel an in-flight call."""
+    if budget_s is None:
+        budget_s = config.PRESENT_BUDGET_MS / 1000.0
+
+    out: list[Presentation] = []
+    start = time.monotonic()
+    for c in candidates:
+        benefits_text = benefits_by_slug.get(c.slug, "")
+        if llm_enabled and (time.monotonic() - start) >= budget_s:
+            logger.info("present: %.1fs budget spent, falling back for %s and the rest", budget_s, c.slug)
+            out.append(_fallback_presentation(c, benefits_text))
+            continue
+        out.append(
+            present_one(c, benefits_text, answers, llm_enabled=llm_enabled, llm_caller=llm_caller)
+        )
+    return out

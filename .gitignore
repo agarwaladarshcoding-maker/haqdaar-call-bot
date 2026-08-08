@@ -7,3 +7,7 @@ cache/tts/*.wav
 *.egg-info/
 .venv/
 .DS_Store
+# Real caller transcripts and server logs - diagnostics only, never committed.
+calls/
+logs/
+uvicorn.log

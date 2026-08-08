@@ -82,7 +82,10 @@ def tts(text: str, lang: str | None = None) -> bytes | None:
                 "speech_sample_rate": TTS_SAMPLE_RATE,
                 "pace": TTS_PACE,
             },
-            timeout=8.0,
+            # Was 8.0. This runs inside a Twilio webhook that must answer
+            # within 15s, and a turn can need several clips - one slow
+            # synthesis must not be able to eat the whole budget.
+            timeout=config.TTS_TIMEOUT_MS / 1000.0,
         )
         resp.raise_for_status()
         body = resp.json()

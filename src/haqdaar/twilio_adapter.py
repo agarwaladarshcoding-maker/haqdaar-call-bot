@@ -50,6 +50,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import os
 import threading
 import time
 import uuid
@@ -73,9 +74,16 @@ def _get_external_url(request: Request) -> str:
         url_str = urlunparse(parsed._replace(netloc=host))
     return url_str
 
-from haqdaar import config, voice
+from haqdaar import calllog, config, voice
 from haqdaar.bank import Bank, BankError, load_bank
 from haqdaar.engine import CallState, step
+
+# Played while the engine works (STT + LLM + narrow can take a couple of
+# seconds). Kept as a module constant so scripts/warm_cache.py can
+# pre-generate it - it is spoken on EVERY turn, so a cache miss here would
+# be the most expensive one in the system.
+WAIT_TEXT = "Ek minute, main dekh raha hoon."
+TTS_LANG = "hi-IN"
 
 router = APIRouter(prefix="/twilio", tags=["twilio"])
 
@@ -171,8 +179,35 @@ def _describe_event(event: dict) -> str:
 
 def _sarvam_lang(engine_language: str | None) -> str:
     """CallState.language is "hi"/"en"/None (engine.py) - Sarvam and
-    Twilio's own <Gather>/<Say> both want a BCP-47-ish code."""
+    Twilio's own <Gather>/<Say> both want a BCP-47-ish code.
+
+    Note this ALWAYS returns a valid BCP-47 code, never the raw engine
+    value. Rendering `state.language` straight into a TwiML attribute is
+    the bug this function exists to prevent: it produced
+    <Say language="None"> on every single turn, which Twilio rejects."""
     return "en-IN" if engine_language == "en" else "hi-IN"
+
+
+def _say_twiml(text: str, lang_code: str, audio_base_url: str, deadline: float | None = None) -> str:
+    """One spoken line as TwiML: <Play> of a real Sarvam clip when we have
+    one, <Say> only as a last resort (no SARVAM_API_KEY, a live TTS
+    failure, or the per-turn TTS budget already spent). Every place that
+    speaks goes through here, so no call site can reintroduce a
+    hand-written <Say> with an unvalidated language.
+
+    `deadline` caps synthesis across a whole turn. A cache hit is free and
+    always taken; only an actual Sarvam call is skipped once the budget is
+    gone, so a warmed cache (scripts/warm_cache.py) never hits this path."""
+    cached = os.path.exists(voice._cache_path(text, lang_code))
+    if not cached and deadline is not None and time.monotonic() > deadline:
+        print(f"  \033[33mTTS budget spent, falling back to <Say> for: {text[:50]}\033[0m", flush=True)
+        return f'<Say language="{lang_code}">{escape(text)}</Say>'
+
+    audio = voice.tts(text, lang_code)
+    if audio:
+        clip_id = os.path.basename(voice._cache_path(text, lang_code))
+        return f"<Play>{escape(audio_base_url)}/twilio/audio/{clip_id}</Play>"
+    return f'<Say language="{lang_code}">{escape(text)}</Say>'
 
 
 def _actions_to_twiml(actions: list[dict], gather_action_url: str, audio_base_url: str, language: str | None) -> str:
@@ -189,16 +224,11 @@ def _actions_to_twiml(actions: list[dict], gather_action_url: str, audio_base_ur
     lang_code = _sarvam_lang(language)
     parts = ["<?xml version=\"1.0\" encoding=\"UTF-8\"?>", "<Response>"]
     pending_says: list[str] = []
+    deadline = time.monotonic() + config.TTS_BUDGET_MS / 1000.0
 
     def flush_says():
         for text in pending_says:
-            audio = voice.tts(text, lang_code)
-            if audio:
-                digest = voice._cache_path(text, lang_code)
-                clip_id = digest.rsplit("/", 1)[-1]
-                parts.append(f'<Play>{escape(audio_base_url)}/twilio/audio/{clip_id}</Play>')
-            else:
-                parts.append(f'<Say language="{lang_code}">{escape(text)}</Say>')
+            parts.append(_say_twiml(text, lang_code, audio_base_url, deadline))
         pending_says.clear()
 
     for a in actions:
@@ -233,7 +263,14 @@ def _actions_to_twiml(actions: list[dict], gather_action_url: str, audio_base_ur
     return "".join(parts)
 
 
-def _record_turn(call_id: str, call_sid: str, event: dict, new_state: CallState, actions: list[dict]) -> None:
+def _record_turn(
+    call_id: str,
+    call_sid: str,
+    event: dict,
+    new_state: CallState,
+    actions: list[dict],
+    timings: dict[str, float] | None = None,
+) -> None:
     log = _call_logs.get(call_id)
     if log is None:
         return
@@ -244,25 +281,55 @@ def _record_turn(call_id: str, call_sid: str, event: dict, new_state: CallState,
         question_id=new_state.current_question,
         phase=new_state.phase,
     ))
+    said = [a["say"] for a in actions if "say" in a]
+
     _log_line(call_sid, f"{_describe_event(event)} -> phase={new_state.phase} candidates={len(new_state.candidates)}")
-    for a in actions:
-        if "say" in a:
-            preview = a["say"][:80] + ("..." if len(a["say"]) > 80 else "")
-            _log_line(call_sid, f'  SAY: "{preview}"')
+    for text in said:
+        preview = text[:80] + ("..." if len(text) > 80 else "")
+        _log_line(call_sid, f'  SAY: "{preview}"')
+
+    # Same data the terminal just printed, persisted so the call can still
+    # be diagnosed after it ends (calllog.py never raises).
+    calllog.log_turn(
+        call_sid,
+        turn=len(log.turns),
+        event=event,
+        said=said,
+        phase=new_state.phase,
+        question_id=new_state.current_question,
+        candidate_count=len(new_state.candidates),
+        answers=dict(new_state.answers),
+        timings=timings,
+    )
+
     if new_state.phase == "ended":
         _print_call_report(log)
 
 
 def _step_and_render(call_id: str, call_sid: str, event: dict, gather_url: str, audio_base_url: str) -> Response:
     bank = _get_bank()
+    t0 = time.monotonic()
     with _lock:
         state = _sessions.get(call_id)
         if state is None:
             raise HTTPException(status_code=404, detail=f"unknown call_id: {call_id}")
         new_state, actions = step(state, event, bank, config.DB_PATH)
         _sessions[call_id] = new_state
-    _record_turn(call_id, call_sid, event, new_state, actions)
+    t_step = time.monotonic()
     twiml = _actions_to_twiml(actions, gather_url, audio_base_url, new_state.language)
+    t_tts = time.monotonic()
+
+    # Timed separately because these are the two stages that can blow past
+    # Twilio's 15s webhook timeout, and knowing WHICH one did is the whole
+    # point of logging them.
+    timings = {
+        "engine_ms": round((t_step - t0) * 1000, 1),
+        "tts_ms": round((t_tts - t_step) * 1000, 1),
+        "total_ms": round((t_tts - t0) * 1000, 1),
+    }
+    _record_turn(call_id, call_sid, event, new_state, actions, timings)
+    if timings["total_ms"] > 10_000:
+        _log_line(call_sid, f"\033[31mSLOW TURN {timings['total_ms']}ms - Twilio drops at 15000ms\033[0m")
     return Response(content=twiml, media_type="application/xml")
 
 
@@ -282,6 +349,7 @@ async def twilio_voice(request: Request) -> Response:
         raise HTTPException(status_code=400, detail="missing CallSid")
 
     _log_line(call_sid, f"NEW CALL from={params.get('From')} to={params.get('To')}")
+    calllog.log_event(call_sid, "call_start", from_=params.get("From"), to=params.get("To"))
 
     bank = _get_bank()
     call_id = str(uuid.uuid4())
@@ -346,19 +414,23 @@ async def twilio_gather(
         state = _sessions[call_id]
         language = state.language
 
-    process_url = f"{base_url}/twilio/process/{call_sid}"
-    
-    # "Please wait" depends on the current language
-    if language == "en-IN":
-        wait_text = "Please wait..."
-    else:
-        wait_text = "Kripaya pratiksha karein..."
+    calllog.log_event(call_sid, "input", event=event, phase=state.phase)
 
-    twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Say language="{language}">{wait_text}</Say>
-    <Redirect method="POST">{process_url}</Redirect>
-</Response>"""
+    process_url = f"{base_url}/twilio/process/{call_sid}"
+
+    # Was <Say language="{state.language}"> here, which rendered
+    # language="None"/"hi" - neither is a value Twilio accepts, so this
+    # verb was invalid on EVERY turn of every call. Now it goes through
+    # the same Sarvam <Play> path as every other spoken line, which also
+    # means the wait message is in the same voice as the rest of the call
+    # instead of Twilio's built-in one.
+    lang_code = _sarvam_lang(language)
+    twiml = (
+        '<?xml version="1.0" encoding="UTF-8"?><Response>'
+        f"{_say_twiml(WAIT_TEXT, lang_code, base_url)}"
+        f'<Redirect method="POST">{escape(process_url)}</Redirect>'
+        "</Response>"
+    )
     return Response(content=twiml, media_type="application/xml")
 
 
@@ -399,8 +471,6 @@ async def twilio_audio(clip_id: str) -> Response:
     clip_id is validated as a bare filename (no path separators) before
     ever touching the filesystem, since it comes straight from a URL path
     segment Twilio echoes back from a <Play> tag we ourselves generated."""
-    import os
-
     if "/" in clip_id or ".." in clip_id or not clip_id.endswith(".wav"):
         raise HTTPException(status_code=400, detail="invalid clip id")
     path = os.path.join(voice.CACHE_DIR, clip_id)
@@ -436,6 +506,13 @@ async def twilio_status(request: Request) -> dict[str, Any]:
         log = _call_logs.pop(call_id, None) if call_id else None
         if call_id is not None:
             _sessions.pop(call_id, None)
+    calllog.log_event(
+        call_sid,
+        "call_end",
+        status=call_status,
+        turns=len(log.turns) if log else 0,
+        reached_end_phase=bool(log and log.turns and log.turns[-1].phase == "ended"),
+    )
     if log is not None and (not log.turns or log.turns[-1].phase != "ended"):
         _log_line(call_sid, f"call ended (status={call_status}) before reaching engine's own 'ended' phase")
         _print_call_report(log)

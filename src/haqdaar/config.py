@@ -11,6 +11,13 @@ LLM_MODEL = os.getenv("LLM_MODEL", "claude-sonnet-5")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "")  # empty -> provider's own default
 LLM_TIMEOUT_MS = int(os.getenv("LLM_TIMEOUT_MS", "700"))
 
+# Wall-clock caps for the two stages that run inside a Twilio webhook.
+# Twilio hangs up if we don't answer in 15s, so these must sum to well
+# under that with room for the HTTP round trip itself.
+PRESENT_BUDGET_MS = int(os.getenv("PRESENT_BUDGET_MS", "4000"))   # present.py LLM total
+TTS_BUDGET_MS = int(os.getenv("TTS_BUDGET_MS", "5000"))           # per-turn TTS total
+TTS_TIMEOUT_MS = int(os.getenv("TTS_TIMEOUT_MS", "4000"))         # one Sarvam TTS call
+
 SARVAM_API_KEY = os.getenv("SARVAM_API_KEY", "")
 SARVAM_TTS_LANG = os.getenv("SARVAM_TTS_LANG", "hi-IN")
 SARVAM_STT_LANG = os.getenv("SARVAM_STT_LANG", "hi-IN")

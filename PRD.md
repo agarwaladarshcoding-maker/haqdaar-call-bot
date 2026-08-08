@@ -98,7 +98,7 @@ The five sections are identical for every scheme: what you get, who is eligible,
 | M10 | Spoken scheme names confirmed back before acting |
 | M11 | Zero candidates recovers by undoing the last answer |
 | M12 | Deadlines spoken only from `verified = 1` rows |
-| M13 | Caller answers never persisted to disk |
+| M13 | ~~Caller answers never persisted to disk~~ **Superseded.** A live call that misbehaved was undiagnosable once it ended, which cost more than the requirement bought. `calllog.py` now writes a per-call transcript (both sides, engine state, stage timings) to `calls/`. Scoped override: transcripts only, never audio, and `calls/` is gitignored so no caller data reaches the repo. |
 | M14 | System runs fully with every external key absent |
 
 ### Should have
