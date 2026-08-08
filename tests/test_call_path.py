@@ -178,6 +178,34 @@ def test_speech_question_emits_record_pointing_at_the_sarvam_endpoint(client):
     assert f'timeout="{config.RECORD_SILENCE_SECONDS}"' in resp.text
 
 
+def test_the_barge_in_gather_falls_through_to_the_record_on_silence(client):
+    """REGRESSION, from a real call. Without actionOnEmptyResult="false"
+    Twilio POSTs the Gather action the instant the barge-in window lapses
+    with no keypress - so the <Record> after it is never reached, and a
+    caller who was asked "Yojna ka naam boliye" and answered was recorded
+    for exactly zero seconds. The whole Gather/Record pairing depends on
+    empty input falling THROUGH rather than ending the turn."""
+    resp = _start_call(client, "CA401")
+    assert "<Record" in resp.text
+    assert 'actionOnEmptyResult="false"' in resp.text, (
+        "silence must fall through to the <Record>, not end the turn"
+    )
+
+
+def test_a_buttons_only_gather_still_acts_on_silence():
+    """The inverse: with no <Record> to fall through to, silence MUST
+    reach the action so engine.py's silence ladder advances. Suppressing
+    it there would leave the caller in a Gather that never ends."""
+    from haqdaar.twilio_adapter import _actions_to_twiml
+
+    twiml = _actions_to_twiml(
+        [{"say": "Ek"}, {"gather": {"digits": 1, "speech": False}}],
+        "https://x.test/twilio/gather/CA1", "https://x.test", "hi",
+    )
+    assert "<Record" not in twiml
+    assert "actionOnEmptyResult" not in twiml
+
+
 def test_the_caller_gets_time_to_think_before_the_recording_cuts_them_off():
     """REGRESSION, from two real calls. Twilio's <Record timeout> counts
     silence from the moment recording starts, not just after speech - so

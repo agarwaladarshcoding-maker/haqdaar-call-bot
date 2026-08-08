@@ -274,8 +274,18 @@ def _actions_to_twiml(
             # the barge-in window before the <Record> takes over. Without
             # a <Record> to fall through to, it stays the long wait.
             timeout = config.GATHER_BARGE_IN_SECONDS if speech else 15
+            # actionOnEmptyResult="false" is load-bearing whenever a
+            # <Record> follows, and its absence is why a real caller was
+            # asked "Yojna ka naam boliye", spoke, and was never recorded:
+            # Twilio POSTed the Gather action with empty Digits the
+            # instant the barge-in window lapsed, so the <Record> below
+            # was never reached and the turn became a bare silence event.
+            # False means "no input -> fall through to the next verb",
+            # which is the entire premise of the Gather/Record pair.
+            empty_result = "" if not speech else ' actionOnEmptyResult="false"'
             parts.append(
-                f'<Gather input="dtmf" numDigits="{num_digits}" timeout="{timeout}" '
+                f'<Gather input="dtmf" numDigits="{num_digits}" timeout="{timeout}"'
+                f'{empty_result} '
                 f'action="{escape(gather_action_url)}" method="POST">'
             )
             flush_says()
@@ -293,7 +303,7 @@ def _actions_to_twiml(
                 parts.append(
                     f'<Record action="{escape(recording_action_url)}" method="POST" '
                     f'maxLength="{config.RECORD_MAX_SECONDS}" '
-                    f'timeout="{config.RECORD_SILENCE_SECONDS}" playBeep="false" '
+                    f'timeout="{config.RECORD_SILENCE_SECONDS}" playBeep="true" '
                     f'trim="trim-silence" finishOnKey="0123456789*#" />'
                 )
             else:
@@ -600,12 +610,25 @@ async def twilio_recording(
         # SILENCE_AFTER_RECORD, not the 15 the <Gather> path reports:
         # engine.py's silence ladder is cumulative and calibrated in real
         # seconds (5 nudge / 15 two-options / 25 are-you-there / 30 end).
-        # This path's actual silence is the 2s Gather plus the 2s Record,
-        # so reporting 15 would have hung up on a caller who simply paused
-        # to think - two thoughtful pauses would hit 30 and end the call
-        # after about ten real seconds.
+        # This path's actual silence is the barge-in Gather plus the
+        # Record timeout, so reporting 15 would have hung up on a caller
+        # who simply paused to think - two thoughtful pauses would hit 30
+        # and end the call after about ten real seconds.
         event = {"timeout": SILENCE_AFTER_RECORD}
         _log_line(call_sid, f"no usable recording (duration={duration}s) -> silence")
+        # Logged as an `stt` record with an explicit reason, NOT left to
+        # the terminal alone. A real call reached this branch and the
+        # JSONL showed only a bare `{"dtmf": "timeout"}`, which is
+        # indistinguishable from the caller never speaking - so the
+        # transcript could not answer whether Twilio recorded nothing,
+        # recorded silence, or recorded speech we then threw away. That
+        # is the exact question the call log exists to answer.
+        calllog.log_event(
+            call_sid, "stt",
+            transcript="", confidence=0.0, audio_seconds=duration, fetched=False,
+            skipped_reason=("no RecordingUrl" if not RecordingUrl else "duration under 1s"),
+            timings_ms={},
+        )
     else:
         t0 = time.monotonic()
         audio = _fetch_recording(RecordingUrl)
