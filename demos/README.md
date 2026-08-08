@@ -31,3 +31,21 @@ what the actual code returns.
   DATA = ...` line in `step6_menu_demo.html`.
 - **`step6_menu_trace.json`** — the generated data itself, kept alongside
   the script for diffing.
+- **`step78_api_sim_demo.html`** — open directly in a browser. Four tabs:
+  "Call scenarios" (M1/M2/M3/M6/M7 as real HTTP request/response ladders —
+  method, path, status, the exact `say`/`gather` actions, and a live state
+  strip with a candidate-count bar), "Concurrency proof" (two real calls
+  fired on separate threads at once, showing neither call's answers leaked
+  into the other — L5), "Direct dial" (the M10 dial-code path via
+  `menu.py`, same as `step6_menu_demo.html`'s dial tab but reached without
+  going through any questions), and "Health + run it yourself" (the real
+  `GET /health` response plus the exact `sim.py` command to run locally
+  with no API keys). Driven entirely by real requests against a live
+  `uvicorn` server running `haqdaar.api:app`.
+- **`gen_step7_8_trace.py`** — regenerates `step78_trace.json`. Run
+  `.venv/bin/python demos/gen_step7_8_trace.py` after any change to
+  `api.py`, `engine.py`, or `sim.py` that could change what a call looks
+  like over HTTP, then paste the new JSON over the `const DATA = ...` line
+  in `step78_api_sim_demo.html`.
+- **`step78_trace.json`** — the generated data itself, kept alongside the
+  script for diffing.
