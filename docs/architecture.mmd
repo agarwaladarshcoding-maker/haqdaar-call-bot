@@ -1,0 +1,36 @@
+%% Haqdaar - one turn of a phone call, as the code actually runs it.
+%% Green = deterministic (same input, same output, every call)
+%% Orange = a model (speech or language) - never trusted raw
+%% Blue   = a gate where model output is checked against a closed set
+flowchart TD
+    A([Caller speaks Hindi on the phone]) --> B[Twilio records the audio]
+    B --> C[Sarvam saaras:v3<br/>speech to Roman-script text]
+    C --> D{Knows a scheme name?}
+
+    D -->|"press 1"| E[LLM picks from a<br/>token-overlap shortlist]
+    E --> F{{"Gate: a shortlisted scheme, or NONE"}}
+    F --> G[Read the name back<br/>to confirm]
+
+    D -->|"press 2"| H[LLM maps the sentence<br/>to attribute values]
+    H --> I{{"Gate: only vocabulary the<br/>question bank declares"}}
+
+    G --> J[narrow · 372 rules<br/>unknown never eliminates]
+    I --> J
+    J --> K{Narrow enough,<br/>or 6 questions asked?}
+
+    K -->|no| L[select · the question with the<br/>highest information gain]
+    K -->|yes| M[present · English name<br/>+ Hindi benefit, verbatim-gated]
+
+    L --> N[Sarvam bulbul:v3<br/>cached audio]
+    M --> N
+    N --> A
+
+    classDef fixed fill:#E4EFE9,stroke:#1B6B4A,stroke-width:1.5px,color:#123D2B
+    classDef model fill:#F6E9E0,stroke:#A8552A,stroke-width:1.5px,color:#6B3418
+    classDef gate  fill:#E2E9F3,stroke:#2C4C7C,stroke-width:1.5px,color:#1B3050
+    classDef edge  fill:#EFF2EF,stroke:#5C6863,stroke-width:1.5px,color:#131B18
+
+    class A edge
+    class B,G,J,L fixed
+    class C,E,H,M,N model
+    class F,I gate
